@@ -1,2 +1,9 @@
-<!DOCTYPE RCC>
-<RCC version="1.0"/>
+<RCC>
+    <qresource prefix="/btn_icon">
+        <file>resources/icons/file.svg</file>
+        <file>resources/icons/home.svg</file>
+        <file>resources/icons/night.svg</file>
+        <file>resources/icons/set.svg</file>
+        <file>resources/icons/sun.svg</file>
+    </qresource>
+</RCC>

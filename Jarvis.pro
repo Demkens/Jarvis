@@ -16,16 +16,37 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    main.cpp \
-    widget.cpp
+    src/dialogs/formatconversiondialog.cpp \
+    src/main.cpp \
+    src/gui/widget.cpp \
+    src/pages/managepage.cpp
 
 HEADERS += \
-    widget.h
+    src/dialogs/formatconversiondialog.h \
+    src/gui/widget.h \
+    src/pages/managepage.h
 
 FORMS += \
-    widget.ui
+    src/ui/widget.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+RESOURCES += \
+    rec.qrc
+
+INCLUDEPATH += \
+    src/gui \
+    src/pages \
+    src/dialogs \
+    src/ui
+
+# src/gui  主界面相关
+# src/pages  各功能页面
+# src/dialogs  对话框
+# src/ui  UI文件
+# resources/icons  资源文件目录-图标
+# resources/styles  资源文件目录-风格
+# resources/datas  资源文件目录-数据库
