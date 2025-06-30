@@ -1,4 +1,5 @@
 QT       += core gui
+QT       += concurrent
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -16,15 +17,27 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    src/dialogs/formatconversiondialog.cpp \
     src/main.cpp \
     src/gui/widget.cpp \
-    src/pages/managepage.cpp
+    src/pages/datacounter.cpp \
+    src/pages/filebrowser.cpp \
+    src/pages/fileeditor.cpp \
+    src/pages/labeleditor.cpp \
+    src/pages/settingeditor.cpp \
+    src/widgets/infobrowser.cpp \
+    src/dialogs/mediabrowser.cpp \
+    src/dialogs/formatconversion.cpp
 
 HEADERS += \
-    src/dialogs/formatconversiondialog.h \
     src/gui/widget.h \
-    src/pages/managepage.h
+    src/pages/datacounter.h \
+    src/pages/filebrowser.h \
+    src/pages/fileeditor.h \
+    src/pages/labeleditor.h \
+    src/pages/settingeditor.h \
+    src/widgets/infobrowser.h \
+    src/dialogs/mediabrowser.h \
+    src/dialogs/formatconversion.h
 
 FORMS += \
     src/ui/widget.ui
@@ -40,13 +53,16 @@ RESOURCES += \
 INCLUDEPATH += \
     src/gui \
     src/pages \
+    src/widgets \
     src/dialogs \
     src/ui
 
 # src/gui  主界面相关
-# src/pages  各功能页面
+# src/pages  主要页面
+# src/widgets  次级页面
 # src/dialogs  对话框
 # src/ui  UI文件
+
 # resources/icons  资源文件目录-图标
 # resources/styles  资源文件目录-风格
 # resources/datas  资源文件目录-数据库

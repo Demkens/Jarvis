@@ -1,3 +1,4 @@
+// 格式转换对话框
 #ifndef FORMATCONVERSIONDIALOG_H
 #define FORMATCONVERSIONDIALOG_H
 
@@ -12,12 +13,12 @@
 #include <QMessageBox>
 #include <QProgressDialog>
 
-class FormatConversionDialog : public QDialog
+class FormatConversion : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit FormatConversionDialog(const QStringList &selectedFiles, QWidget *parent = nullptr);
+    explicit FormatConversion(const QStringList &selectedFiles, QWidget *parent = nullptr);
 
 private:
     // 容器和组件

@@ -30,7 +30,7 @@ void Widget::setupUI()
 
     stack = new QStackedWidget(this);     // 0级组件
     page_home = new QWidget(stack);       // 1级窗口
-    page_manage = new ManagePage(stack);  // 1级窗口
+    page_manage = new FileEditor(stack);  // 1级窗口
     page_set = new QWidget(stack);        // 1级窗口
 
     // 配置控件属性（集中配置）
@@ -53,7 +53,6 @@ void Widget::setupUI()
     page_set->findChildren<QLabel *>().at(0)->setText("设置");
 
     page_home->setStyleSheet("background-color: #fdfdfd;");
-    page_manage->setStyleSheet("background-color: #fdfdfd;");
     page_set->setStyleSheet("background-color: #fdfdfd;");
 
     stack->setStyleSheet(R"(QStackedWidget {background-color: #fdfdfd;})");

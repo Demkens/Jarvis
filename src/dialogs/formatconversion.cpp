@@ -1,6 +1,6 @@
-#include "formatconversiondialog.h"
+#include "formatconversion.h"
 
-FormatConversionDialog::FormatConversionDialog(const QStringList &selectedFiles, QWidget *parent)
+FormatConversion::FormatConversion(const QStringList &selectedFiles, QWidget *parent)
     : QDialog(parent), m_selectedFiles(selectedFiles)
 {
     this->setWindowTitle("文件格式转换");
@@ -16,7 +16,7 @@ FormatConversionDialog::FormatConversionDialog(const QStringList &selectedFiles,
     populateComboBoxes();
 }
 
-void FormatConversionDialog::setupUI()
+void FormatConversion::setupUI()
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
@@ -54,18 +54,18 @@ void FormatConversionDialog::setupUI()
     buttonLayout->addStretch();
 
     QPushButton *cancelButton = new QPushButton("取消");
-    connect(cancelButton, &QPushButton::clicked, this, &FormatConversionDialog::reject);
+    connect(cancelButton, &QPushButton::clicked, this, &FormatConversion::reject);
     buttonLayout->addWidget(cancelButton);
 
     m_convertButton = new QPushButton("转换");
     m_convertButton->setStyleSheet("background-color: #2196F3;");
-    connect(m_convertButton, &QPushButton::clicked, this, &FormatConversionDialog::onConvertClicked);
+    connect(m_convertButton, &QPushButton::clicked, this, &FormatConversion::onConvertClicked);
     buttonLayout->addWidget(m_convertButton);
 
     mainLayout->addLayout(buttonLayout);
 }
 
-void FormatConversionDialog::populateComboBoxes()
+void FormatConversion::populateComboBoxes()
 {
     // 收集所有选中的文件格式
     QSet<QString> formats;
@@ -100,7 +100,7 @@ void FormatConversionDialog::populateComboBoxes()
     }
 }
 
-void FormatConversionDialog::onConvertClicked()
+void FormatConversion::onConvertClicked()
 {
     QString originalFormat = m_originalFormatCombo->currentText().toLower();
     QString targetFormat = m_targetFormatCombo->currentText().toLower();
@@ -128,7 +128,7 @@ void FormatConversionDialog::onConvertClicked()
     }
 }
 
-void FormatConversionDialog::performConversion()
+void FormatConversion::performConversion()
 {
     QString originalFormat = m_originalFormatCombo->currentText().toLower();
     QString targetFormat = m_targetFormatCombo->currentText().toLower();

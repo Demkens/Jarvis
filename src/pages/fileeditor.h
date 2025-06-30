@@ -1,3 +1,4 @@
+// 文件编辑器主页面
 #ifndef MANAGEPAGE_H
 #define MANAGEPAGE_H
 
@@ -15,14 +16,14 @@
 #include <QScreen>
 #include <QDialog>
 
-#include "formatconversiondialog.h"
+#include "formatconversion.h"
 
-class ManagePage : public QWidget
+class FileEditor : public QWidget
 {
      Q_OBJECT
 
 public:
-    ManagePage(QWidget *parent = nullptr);
+    FileEditor(QWidget *parent = nullptr);
 
 private:
     // 容器和组件

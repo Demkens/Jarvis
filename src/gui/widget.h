@@ -1,3 +1,4 @@
+// 主页面
 #ifndef WIDGET_H
 #define WIDGET_H
 
@@ -6,7 +7,7 @@
 #include <QHBoxLayout>
 #include <QStackedWidget>
 
-#include "managepage.h"
+#include "fileeditor.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Widget; }
@@ -28,7 +29,7 @@ private:
     QPushButton *btn_file;      // 文件按钮
     QPushButton *btn_set;       // 设置按钮
     QWidget *page_home;         // 第一页-主页
-    ManagePage *page_manage;    // 第二页-管理页
+    FileEditor *page_manage;    // 第二页-管理页
     QWidget *page_set;          // 第三页-设置页
     QStackedWidget *stack;      // 多页窗口
 
