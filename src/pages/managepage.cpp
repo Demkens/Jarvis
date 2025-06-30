@@ -160,22 +160,26 @@ void ManagePage::on_btn1_clicked()
     QItemSelectionModel *selectionModel = tableview->selectionModel();      // 返回表格视图关联的选择模型对象
     QModelIndexList selectedIndexes = selectionModel->selectedRows();       // 返回包含所有选中行索引的列表
 
-    if (selectedIndexes.isEmpty()) {
+    if (selectedIndexes.isEmpty())
+    {
         QMessageBox::warning(this, "未选择文件", "请先选择一个或多个文件");
         return;
     }
 
-    // 收集选中的文件路径
+    // 收集选中的文件路径，并存储到 selectedFiles 中并传给自定义的对话框类
     QStringList selectedFiles;
-    for (const QModelIndex &index : selectedIndexes) {
+    for (const QModelIndex &index : selectedIndexes)
+    {
         QString filePath = model->filePath(index);
         QFileInfo info(filePath);
-        if (info.isFile()) {
+        if (info.isFile())
+        {
             selectedFiles.append(filePath);
         }
     }
 
-    if (selectedFiles.isEmpty()) {
+    if (selectedFiles.isEmpty())
+    {
         QMessageBox::warning(this, "未选择文件", "请选择文件（而不是目录）");
         return;
     }
