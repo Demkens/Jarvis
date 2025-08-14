@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/main.qml</file>
+        <file>qml/pages/DataCounter.qml</file>
+        <file>qml/pages/FileBrowser.qml</file>
+        <file>qml/pages/FileEditor.qml</file>
+        <file>qml/pages/LabelEditor.qml</file>
+        <file>qml/pages/SettingEditor.qml</file>
+        <file>qml/modules/NormalButton.qml</file>
+        <file>qml/dialogs/CreateDbDialog.qml</file>
+    </qresource>
+</RCC>
