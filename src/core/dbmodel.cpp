@@ -1,6 +1,6 @@
 #include "dbmodel.h"
 
-DatabaseModel::DatabaseModel(QObject *parent) : QObject(parent)
+DatabaseModel::DatabaseModel(QObject *parent) : QAbstractListModel(parent)
 {
     dbLink = QSqlDatabase::addDatabase("QSQLITE", "SharedConnection");
     currentDbName = "";
@@ -520,4 +520,50 @@ void DatabaseModel::setCurrentDbName(const QString &newCurrentDbName)
         return;
     currentDbName = newCurrentDbName;
     emit currentDbNameChanged();
+}
+
+int DatabaseModel::rowCount(const QModelIndex &parent) const {
+    return parent.isValid() ? 0 : m_data.size();
+}
+
+QVariant DatabaseModel::data(const QModelIndex &index, int role) const
+{
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_data.size())
+        return QVariant();
+
+    const DataItem &item = m_data[index.row()];
+    switch (role) {
+        case IdRole: return item.id;
+        case NameRole: return item.name;
+        case ValueRole: return item.value;
+        default: return QVariant();
+    }
+}
+
+QHash<int, QByteArray> DatabaseModel::roleNames() const {
+    return {
+        {IdRole, "itemId"},
+        {NameRole, "itemName"},
+        {ValueRole, "itemValue"}
+    };
+}
+
+void DatabaseModel::refresh() {
+    beginResetModel();
+    m_data.clear();
+
+    QSqlQuery query(dbLink);
+    if (query.exec("SELECT id, name, value FROM my_table")) {
+        while (query.next()) {
+            m_data.append({
+                query.value(0).toInt(),
+                query.value(1).toString(),
+                query.value(2).toDouble()
+            });
+        }
+    } else {
+        qWarning() << "Query failed:" << query.lastError();
+    }
+
+    endResetModel();
 }

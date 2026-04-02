@@ -6,8 +6,7 @@ Rectangle {
     Text {
         id: name
         anchors.centerIn: parent
-        text: qsTr("标签管理页面")
+        text: "未指定库"
         font.pixelSize: 28
     }
-
 }

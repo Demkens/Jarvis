@@ -1,11 +1,10 @@
+# 主界面程序入口
 import QtQuick
 import QtQuick.Window
 import QtQuick.Layouts
 import QtQuick.Controls
 
 import "modules"
-import "pages"
-import "dialogs"
 
 import Model 1.0
 
@@ -13,18 +12,20 @@ ApplicationWindow {
     id: root
     width: 1360; height: 865
     minimumWidth: 1300; minimumHeight: 800
-    title: "Javris" + " - " + dbModel.currentDbName
+    title: "Jarvis" + (dbModel.currentDbName ? " - " + dbModel.currentDbName : "")
     color: "#e6e6e6"
     visible: true
+
+    // 数据库是否已打开
+    property bool hasDbOpened: dbModel.currentDbName !== ""
 
     // 全局数据库模型
     DatabaseModel {id: dbModel}
 
-    // 动态加载对象
-    Loader {
-        id: createDbLoader
-        property DatabaseModel dbModelalies : dbModel
-    }
+    // 动态加载器 - 仅声明，不设置source，按需创建
+    Loader {id: createDbLoader}
+    Loader {id: labelEditorLoader}
+    Loader {id: settingEditorLoader}
 
     // 顶部菜单栏
     menuBar: MenuBar {
@@ -32,9 +33,14 @@ ApplicationWindow {
             title: "文件"
             MenuItem {
                 text: "新建库..."
+                // 点击时动态创建Loader，弹窗关闭后销毁
                 onTriggered: {
-                    createDbLoader.source = "qrc:/qml/dialogs/CreateDbDialog.qml";
-                    createDbLoader.item.open();
+                    var loader = createDbLoader;
+                    loader.source = "qrc:/qml/dialogs/CreateDbDialog.qml";
+                    loader.item.open();
+                    loader.item.closed.connect(function() {
+                        loader.source = "";
+                    });
                 }
             }
             MenuItem {
@@ -46,61 +52,44 @@ ApplicationWindow {
                 onTriggered: console.log("删除库")
             }
         }
+        Menu {
+            title: "标签"
+            MenuItem {
+                text: "标签管理..."
+                onTriggered: {
+                    var loader = labelEditorLoader;
+                    loader.source = "qrc:/qml/dialogs/LabelDialog.qml";
+                    loader.item.open();
+                    loader.item.closed.connect(function() {
+                        loader.source = "";
+                    });
+                }
+            }
+        }
+        Menu {
+            title: "设置"
+            MenuItem {
+                text: "偏好设置..."
+                onTriggered: {
+                    var loader = settingEditorLoader;
+                    loader.source = "qrc:/qml/dialogs/SettingDialog.qml";
+                    loader.item.open();
+                    loader.item.closed.connect(function() {
+                        loader.source = "";
+                    });
+                }
+            }
+        }
     }
 
+    // 主界面布局
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
-        // 左侧导航栏 (垂直布局)
-        ColumnLayout {
-            Layout.preferredWidth: 45   // 导航栏宽度
-            Layout.fillHeight: true
-
-            // 空白填充项
-            Item {Layout.preferredHeight: 5}
-
-            // 主页按钮
-            NormalButton {
-                id: home
-                iconSource: "qrc:/resource/icons/home.svg"
-                Layout.alignment: Qt.AlignCenter
-                onClicked: {
-                    file.selected = false
-                    setting.selected = false
-                    pageStack.currentIndex = 0
-                }
-            }
-
-            // 文件按钮
-            NormalButton {
-                id: file
-                iconSource: "qrc:/resource/icons/file.svg"
-                Layout.alignment: Qt.AlignCenter
-                onClicked: {
-                    home.selected = false
-                    setting.selected = false
-                    pageStack.currentIndex = 1
-                }
-            }
-
-            // 空白填充项
-            Item {Layout.fillHeight: true}
-
-            // 设置按钮
-            NormalButton {
-                id: setting
-                iconSource: "qrc:/resource/icons/set.svg"
-                Layout.alignment: Qt.AlignCenter
-                onClicked: {
-                    home.selected = false
-                    file.selected = false
-                    pageStack.currentIndex = 2
-                }
-            }
-
-            // 空白填充项
-            Item {Layout.preferredHeight: 10}
+        // 左侧导航栏
+        ButtonBar {
+            onCurrentIndexChanged: pageStack.currentIndex = currentIndex
         }
 
         // 右侧页面区域
@@ -109,17 +98,28 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            // 各页面内容...
-            FileBrowser {
-                id: page1
+            // 文件浏览页面
+            Loader {
+                id: homepage
+                source: "qrc:/qml/pages/FileBrowser.qml"
             }
 
-            FileEditor {
-                id: page2
+            // 文件编辑页面
+            Loader {
+                id: filepage
+                source: hasDbOpened ? "qrc:/qml/pages/FileEditor.qml" : "qrc:/qml/pages/DefaultPage.qml"
             }
 
-            SettingEditor {
-                id: page3
+            // 数据统计页面
+            Loader {
+                id: datapage
+                source: hasDbOpened ? "qrc:/qml/pages/DataCounter.qml" : "qrc:/qml/pages/DefaultPage.qml"
+            }
+
+            // 文档撰写页面
+            Loader {
+                id: docpage
+                source: hasDbOpened ? "qrc:/qml/pages/DocEditor.qml" : "qrc:/qml/pages/DefaultPage.qml"
             }
         }
     }

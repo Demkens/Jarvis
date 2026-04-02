@@ -6,11 +6,19 @@ QT += qml quick sql widgets
 
 SOURCES += \
     src/bridge/cppobj.cpp \
+    src/bridge/datacountermodel.cpp \
+    src/bridge/docmodel.cpp \
+    src/bridge/filemodel.cpp \
+    src/bridge/labelmodel.cpp \
     src/core/dbmodel.cpp \
     src/main.cpp
 
 HEADERS += \
     src/bridge/cppobj.h \
+    src/bridge/datacountermodel.h \
+    src/bridge/docmodel.h \
+    src/bridge/filemodel.h \
+    src/bridge/labelmodel.h \
     src/core/dbmodel.h
 
 RESOURCES += \
@@ -19,16 +27,21 @@ RESOURCES += \
 
 DISTFILES += \
     qml/dialogs/CreateDbDialog.qml \
-    qml/modules/NormalButton.qml \
+    qml/dialogs/LabelDialog.qml \
+    qml/dialogs/SettingDialog.qml \
+    qml/modules/ButtonBar.qml \
+    qml/modules/FlipPageBox.qml \
+    qml/modules/FileDisplayBlock.qml \
     qml/pages/DataCounter.qml \
+    qml/pages/DefaultPage.qml \
     qml/pages/FileBrowser.qml \
     qml/pages/FileEditor.qml \
-    qml/pages/LabelEditor.qml \
-    qml/pages/SettingEditor.qml \
+    qml/pages/DocEditor.qml \
     qml/main.qml
 
 INCLUDEPATH += \
-    src/core
+    src/core \
+    src/bridge
 
 # Additional import path used to resolve QML modules in Qt Creator's code model
 QML_IMPORT_PATH = $$PWD/qml
