@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QDebug>
+#include <QUrl>
 
 #include "common/Timestamps.h"
 #include "events/EventBus.h"
@@ -80,6 +81,54 @@ QVariantList PackageService::listPackages(const QString &form, AppError *error) 
     return list;
 }
 
+QVariantList PackageService::queryPackages(const QString &form, const QString &keyword,
+                                           int offset, int limit, int *total,
+                                           AppError *error) const
+{
+    // WHERE 片段与参数（参数化防注入）：form 空=全部类型，keyword 空=不过滤
+    QString where = QStringLiteral("1=1");
+    QVariantMap params;
+    if (!form.isEmpty()) {
+        where += QStringLiteral(" AND t.form = :form");
+        params.insert(QStringLiteral("form"), form);
+    }
+    const QString kw = keyword.trimmed();
+    if (!kw.isEmpty()) {
+        where += QStringLiteral(" AND f.title LIKE :kw");
+        params.insert(QStringLiteral("kw"), QStringLiteral("%%1%").arg(kw));
+    }
+
+    AppError local;
+    DbAccess &db = m_library->dbAccess();
+
+    // 总数（分页计数），失败即返回
+    if (total != nullptr) {
+        *total = db.scalar(
+            QStringLiteral("SELECT COUNT(*) FROM file f JOIN type t ON t.id = f.type_id "
+                           "WHERE %1").arg(where),
+            params, &local).toInt();
+        if (failed(local, error))
+            return {};
+    }
+
+    // 当前页（offset/limit 同样参数化）
+    params.insert(QStringLiteral("limit"), qMax(0, limit));
+    params.insert(QStringLiteral("offset"), qMax(0, offset));
+    const QList<QVariantMap> rows = db.select(
+        QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, "
+                       "f.created_time, f.updated_time, t.form AS type_form "
+                       "FROM file f JOIN type t ON t.id = f.type_id WHERE %1 "
+                       "ORDER BY f.id LIMIT :limit OFFSET :offset").arg(where),
+        params, &local);
+    if (failed(local, error))
+        return {};
+
+    QVariantList list;
+    for (const QVariantMap &row : rows)
+        list.append(row);
+    return list;
+}
+
 QVariantMap PackageService::packageDetail(qint64 id, AppError *error) const
 {
     AppError local;
@@ -136,6 +185,14 @@ QVariantMap PackageService::packageDetail(qint64 id, AppError *error) const
             }
         }
     }
+    // 封面常驻 envs/<库>/cover/<桶>/<id>.jpg（离线也可显示）；缺失时置空 URL。
+    // 预览面板 / 详情窗口直接消费此字段，与列表行 enrichRows 的 coverUrl 同款。
+    const QString libraryName = m_library->currentName();
+    const int bucket = row.value(QStringLiteral("storage_path")).toInt();
+    const QString coverAbs =
+        StorageService::coverPath(m_paths->coverDir(libraryName), bucket, id);
+    row.insert(QStringLiteral("coverUrl"),
+               QFileInfo::exists(coverAbs) ? QUrl::fromLocalFile(coverAbs) : QUrl());
     return row;
 }
 
@@ -293,5 +350,32 @@ bool PackageService::deletePackage(qint64 id, AppError *error)
 
     emit m_events->packageDeleted(id);
     qInfo().noquote() << "[package] 已删除包: id =" << id << "桶 =" << bucket;
+    return true;
+}
+
+bool PackageService::regenerateCover(qint64 id, AppError *error)
+{
+    QString libraryName;
+    QString linkAddress;
+    if (!requireCurrentLibrary(&libraryName, &linkAddress, error))
+        return false;
+
+    AppError local;
+    DbAccess &db = m_library->dbAccess();
+    QVariantMap row;
+    const bool found = db.selectOne(QStringLiteral("SELECT storage_path FROM file WHERE id = :id"),
+                                    {{QStringLiteral("id"), id}}, row, &local);
+    if (failed(local, error))
+        return false;
+    if (!found) {
+        setOut(error, AppError::Validation, QStringLiteral("数据包不存在：#%1").arg(id));
+        return false;
+    }
+    const int bucket = row.value(QStringLiteral("storage_path")).toInt();
+
+    if (!m_storage->regenerateCover(linkAddress, bucket, id, error))
+        return false;
+
+    emit m_events->packageUpdated(id);
     return true;
 }

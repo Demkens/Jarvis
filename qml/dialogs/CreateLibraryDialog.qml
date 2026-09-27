@@ -14,9 +14,11 @@ Dialog {
 
     signal completed(string name)
 
-    // 由 Main.qml 注入
-    property var libraryService: null
-    property var typePackageManager: null
+    // 由 Main.qml 注入。
+    // 属性名刻意错开全局上下文属性名（libraryService / typePackageManager）：
+    // 若同名，绑定右边的裸标识符会被本对象自己声明的属性遮蔽，导致自引用为 null。
+    property var libService: null
+    property var typePkgs: null
 
     contentItem: ColumnLayout {
         spacing: 10
@@ -56,7 +58,7 @@ Dialog {
         }
         Repeater {
             id: typesRepeater
-            model: dlg.typePackageManager ? dlg.typePackageManager.loadedPackages : []
+            model: dlg.typePkgs ? dlg.typePkgs.loadedPackages : []
             delegate: CheckBox {
                 required property var modelData
                 text: modelData.displayName + "（" + modelData.form + "）"
@@ -90,19 +92,18 @@ Dialog {
             // ActionRole 不自动关窗，仅在创建成功后手动 accept()。
             DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
             onClicked: {
-                // 临时诊断日志（问题确认后移除）
-                console.log("[create] clicked. service =", dlg.libraryService,
-                            "name =", JSON.stringify(nameField.text),
-                            "link =", JSON.stringify(linkField.text))
+                if (!dlg.libService) { // 注入缺失时给出明确提示而非 TypeError
+                    errorText.text = "核心服务未注入，无法创建"
+                    return
+                }
                 const forms = []
                 for (let i = 0; i < typesRepeater.count; ++i) {
                     const box = typesRepeater.itemAt(i)
                     if (box.checked && forms.indexOf(box.form) === -1)
                         forms.push(box.form)
                 }
-                const result = dlg.libraryService.createLibrary(
+                const result = dlg.libService.createLibrary(
                     nameField.text, linkField.text, forms)
-                console.log("[create] result =", JSON.stringify(result))
                 if (result && result.ok) {
                     errorText.text = ""
                     dlg.completed(result.name)

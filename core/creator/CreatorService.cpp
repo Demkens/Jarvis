@@ -105,6 +105,9 @@ bool CreatorService::addAlias(qint64 creatorId, const QString &alias, AppError *
     const QVariant exists = m_db->scalar(
         QStringLiteral("SELECT count(*) FROM creator WHERE id = :id"),
         {{QStringLiteral("id"), creatorId}}, error);
+    // 先处理 DB 查询失败（保留原始错误），再判断是否存在，避免 toInt()==0 掩盖真实错误
+    if (error != nullptr && !error->ok())
+        return false;
     if (exists.toInt() == 0) {
         if (error != nullptr)
             *error = failValidation(QStringLiteral("创作者不存在：#%1").arg(creatorId));

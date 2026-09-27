@@ -24,6 +24,7 @@ set (CORE_HEADERS
     core/library/LibraryService.h
     core/package/PackageService.h
     core/schema/SchemaManager.h
+    core/settings/SettingsService.h
     core/storage/StorageService.h
     core/types/TypeEngine.h
     core/types/TypePackage.h
@@ -45,6 +46,7 @@ add_library(jarvis_core STATIC
     core/creator/CreatorService.cpp
     core/storage/StorageService.cpp
     core/package/PackageService.cpp
+    core/settings/SettingsService.cpp
     core/import/ImportService.cpp
     core/types/TypeEngine.cpp
     core/ui/PackageViewContext.cpp
@@ -70,9 +72,12 @@ qt_add_qml_module(jarvis
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/ResourcePage.qml
+        qml/DetailWindow.qml
         qml/dialogs/CreateLibraryDialog.qml
         qml/dialogs/DeleteLibraryDialog.qml
         qml/dialogs/ImportDialog.qml
+        qml/dialogs/SettingsDialog.qml
         qml/windows/ViewerWindow.qml
 )
 
@@ -103,8 +108,18 @@ if(JARVIS_BUILD_TESTS)
     target_link_libraries(smoke_m3 PRIVATE jarvis_core)
     set_target_properties(smoke_m3 PROPERTIES WIN32_EXECUTABLE FALSE)
 
+    qt_add_executable(smoke_m4 tests/smoke_m4.cpp)
+    target_link_libraries(smoke_m4 PRIVATE jarvis_core)
+    set_target_properties(smoke_m4 PROPERTIES WIN32_EXECUTABLE FALSE)
+
+    qt_add_executable(smoke_m5 tests/smoke_m5.cpp)
+    target_link_libraries(smoke_m5 PRIVATE jarvis_core)
+    set_target_properties(smoke_m5 PROPERTIES WIN32_EXECUTABLE FALSE)
+
     # 保证类型包已拷贝到产物目录后再运行测试
     add_dependencies(smoke_m1 jarvis)
     add_dependencies(smoke_m2 jarvis)
     add_dependencies(smoke_m3 jarvis)
+    add_dependencies(smoke_m4 jarvis)
+    add_dependencies(smoke_m5 jarvis)
 endif()

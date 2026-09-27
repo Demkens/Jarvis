@@ -11,6 +11,7 @@ Dialog {
 
     title: "导入数据包"
     modal: true
+    anchors.centerIn: parent ? parent : null
     width: 840
     height: 640
     standardButtons: Dialog.Close
@@ -21,6 +22,9 @@ Dialog {
     property string channel: "wizard"   // wizard | preprocess
     property var scanPlans: []          // 预处理确认页可编辑的计划副本
     property var lastResult: ({})
+    // 库已打开（依赖 currentName 的 NOTIFY）。isOnline() 是方法调用不建绑定依赖，
+    // enabled 必须与它联算，才能在建库/切库后刷新禁用状态。
+    readonly property bool libOpen: libraryService.currentName !== ""
 
     function resetDialog() {
         form = ""
@@ -29,7 +33,14 @@ Dialog {
         lastResult = ({})
         steps.currentIndex = 0
         wizardLoader.active = false
-        onlineNote.text = importService.isOnline() ? "" : "当前实体链接库不可达，导入已禁用。"
+        // 库已打开且类型表就绪时，默认选中第一个可用类型并赋值 form，
+        // 保证"下一步"立即可用（Component.onCompleted 在启动时执行、当时无库，不能依赖它）
+        if (typeCombo.count > 0) {
+            typeCombo.currentIndex = 0
+            form = typeCombo.currentValue.form
+        }
+        onlineNote.text = dialog.libOpen && importService.isOnline()
+                          ? "" : "当前实体链接库不可达，导入已禁用。"
     }
 
     function showResult(result) {
@@ -69,27 +80,21 @@ Dialog {
                 Layout.fillWidth: true
                 model: typeEngine.enabledTypes
                 textRole: "displayName"
-                enabled: importService.isOnline()
+                enabled: dialog.libOpen && importService.isOnline()
                 onActivated: dialog.form = currentValue.form
-                Component.onCompleted: {
-                    if (count > 0) {
-                        currentIndex = 0
-                        dialog.form = currentValue.form
-                    }
-                }
             }
 
             Label { text: "导入方式"; font.pixelSize: 14; font.bold: true }
             RadioButton {
                 text: "向导导入：手动挑选图片、分组、补元数据后入库"
                 checked: dialog.channel === "wizard"
-                enabled: importService.isOnline()
+                enabled: dialog.libOpen && importService.isOnline()
                 onClicked: dialog.channel = "wizard"
             }
             RadioButton {
                 text: "预处理导入：选择整理好的目录，自动识别子文件夹为图集包"
                 checked: dialog.channel === "preprocess"
-                enabled: importService.isOnline()
+                enabled: dialog.libOpen && importService.isOnline()
                 onClicked: dialog.channel = "preprocess"
             }
 
@@ -101,7 +106,7 @@ Dialog {
                 Button {
                     text: "下一步"
                     highlighted: true
-                    enabled: form !== "" && importService.isOnline()
+                    enabled: dialog.libOpen && form !== "" && importService.isOnline()
                     onClicked: {
                         if (dialog.channel === "wizard") {
                             wizardLoader.active = true
@@ -354,6 +359,7 @@ Dialog {
             var local = String(selectedFolder)
             if (local.indexOf("file:///") === 0)
                 local = local.substring("file:///".length)
+            local = decodeURIComponent(local) // %20 等还原为真实路径
             scanRoot.text = local
             var result = importService.scanPreprocess(dialog.form, local)
             if (!result.ok) {

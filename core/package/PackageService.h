@@ -26,6 +26,12 @@ public:
     // 列出包（form 为空 → 全部类型），按 id 升序
     QVariantList listPackages(const QString &form, AppError *error = nullptr) const;
 
+    // 带条件分页查询（M4 资源页）：
+    // form 空=全部类型；keyword 空=不过滤（否则标题 LIKE %kw%，参数化防注入）；
+    // offset/limit 决定当前页；total 输出总行数（供分页计数，可传空忽略）。
+    QVariantList queryPackages(const QString &form, const QString &keyword,
+                               int offset, int limit, int *total, AppError *error = nullptr) const;
+
     // 单包详情：file 行 + type_form + 分表字段合并（如 draw 的 creator_id/creation_date）
     // + creatorName（creator_id>0 时解析）
     QVariantMap packageDetail(qint64 id, AppError *error = nullptr) const;
@@ -49,6 +55,9 @@ public:
 
     // ---- 删除（开发文档 6.10）----
     bool deletePackage(qint64 id, AppError *error = nullptr);
+
+    // 重新生成封面（M4 右键）：查桶号 → StorageService::regenerateCover；成功后广播 PackageUpdated
+    bool regenerateCover(qint64 id, AppError *error = nullptr);
 
 private:
     // 当前库上下文；无打开库时返回 false

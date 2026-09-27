@@ -11,21 +11,24 @@
 #include "library/AppPaths.h"
 #include "library/LibraryService.h"
 #include "package/PackageService.h"
+#include "settings/SettingsService.h"
 #include "storage/StorageService.h"
 #include "ui/PackageViewContext.h"
 #include "types/TypePackage.h"
 #include "types/TypePackageManager.h"
 
 TypeEngine::TypeEngine(AppPaths *paths, LibraryService *library, TypePackageManager *typePackages,
-                       CreatorService *creators, PackageService *packages, EventBus *events,
-                       QObject *parent)
+                       CreatorService *creators, PackageService *packages, StorageService *storage,
+                       EventBus *events, SettingsService *settings, QObject *parent)
     : QObject(parent)
     , m_paths(paths)
     , m_library(library)
     , m_typePackages(typePackages)
     , m_creators(creators)
     , m_packageService(packages)
+    , m_storage(storage)
     , m_events(events)
+    , m_settings(settings)
 {
     // 库切换/包增删改 → 刷新 QML 可见模型
     QObject::connect(m_events, &EventBus::librarySwitched, this, [this](const QString &) {
@@ -54,6 +57,10 @@ const TypePackage *TypeEngine::enabledPackage(const QString &form) const
                           .scalar(QStringLiteral("SELECT count(*) FROM type WHERE form = :form"),
                                   {{QStringLiteral("form"), form}}, &error)
                           .toInt();
+    if (!error.ok()) { // DB 故障：记日志而非静默当成"未启用"
+        qWarning().noquote() << "[types] enabledPackage 查询失败:" << error.message;
+        return nullptr;
+    }
     if (count != 1)
         return nullptr;
     return m_typePackages->package(form);
@@ -68,6 +75,10 @@ QVariantList TypeEngine::loadEnabledTypes() const
     AppError error;
     const QList<QVariantMap> rows = m_library->dbAccess().select(
         QStringLiteral("SELECT form FROM type ORDER BY id"), {}, &error);
+    if (!error.ok()) { // DB 故障：记日志而非静默返回空列表
+        qWarning().noquote() << "[types] loadEnabledTypes 查询失败:" << error.message;
+        return list;
+    }
     for (const QVariantMap &row : rows) {
         const QString form = row.value(QStringLiteral("form")).toString();
         const TypePackage *package = m_typePackages->package(form);
@@ -104,20 +115,23 @@ QVariantList TypeEngine::loadPackages() const
     QVariantList rows = m_packageService->listPackages(QString(), &error);
     if (!error.ok())
         return {};
+    return enrichRows(rows);
+}
 
+// 给包行附加创作者显示名与封面 URL（资源页/查询共用；封面常驻 envs，离线也可显示）
+QVariantList TypeEngine::enrichRows(QVariantList rows) const
+{
     const QString libraryName = m_library->currentName();
     for (QVariant &item : rows) {
         QVariantMap row = item.toMap();
         const qint64 id = row.value(QStringLiteral("id")).toLongLong();
         const int bucket = row.value(QStringLiteral("storage_path")).toInt();
 
-        // 合并创作者显示名（M4 资源页直接可用）
         AppError detailError;
         const QVariantMap detail = m_packageService->packageDetail(id, &detailError);
         if (detailError.ok() && detail.contains(QStringLiteral("creatorName")))
             row.insert(QStringLiteral("creatorName"), detail.value(QStringLiteral("creatorName")));
 
-        // 封面常驻 envs（离线也可显示），URL 由核心拼接
         const QString coverAbs = StorageService::coverPath(
             m_paths->coverDir(libraryName), bucket, id);
         row.insert(QStringLiteral("coverUrl"),
@@ -125,6 +139,110 @@ QVariantList TypeEngine::loadPackages() const
         item = row;
     }
     return rows;
+}
+
+QVariantMap TypeEngine::queryPackages(const QString &form, const QString &keyword, int page)
+{
+    const int pageSize = m_settings->pageSize(); // M5 全局设置"每页数量"
+    const int pageNum = qMax(1, page);
+    const int offset = (pageNum - 1) * pageSize;
+
+    AppError error;
+    int total = 0;
+    QVariantList rows =
+        m_packageService->queryPackages(form, keyword, offset, pageSize, &total, &error);
+    if (!error.ok())
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    const int pages = (total + pageSize - 1) / pageSize;
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("total"), total},
+            {QStringLiteral("pages"), pages},
+            {QStringLiteral("items"), enrichRows(rows)}};
+}
+
+QVariantMap TypeEngine::settings() const
+{
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("pageSize"), m_settings->pageSize()},
+            {QStringLiteral("coverLongEdge"), m_settings->coverLongEdge()},
+            {QStringLiteral("scoreRecentWeight"), m_settings->scoreRecentWeight()}};
+}
+
+QVariantMap TypeEngine::saveSettings(const QVariantMap &values)
+{
+    // 在现值基础上只覆盖传入键：QML 侧始终传全量三键，但这里不假设调用方传全
+    SettingsService next = *m_settings;
+    if (values.contains(QStringLiteral("pageSize")))
+        next.setPageSize(values.value(QStringLiteral("pageSize")).toInt());
+    if (values.contains(QStringLiteral("coverLongEdge")))
+        next.setCoverLongEdge(values.value(QStringLiteral("coverLongEdge")).toInt());
+    if (values.contains(QStringLiteral("scoreRecentWeight")))
+        next.setScoreRecentWeight(values.value(QStringLiteral("scoreRecentWeight")).toInt());
+
+    AppError error;
+    if (!next.save(SettingsService::defaultPath(m_paths), &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    // 落盘成功后才更新内存与各服务（避免写盘失败时状态不一致）
+    *m_settings = next;
+    m_storage->setCoverLongEdge(next.coverLongEdge());
+    m_packageService->setScoreRecentWeight(next.scoreRecentWeight() / 100.0);
+    return {{QStringLiteral("ok"), true}};
+}
+
+QVariantMap TypeEngine::updateTitle(qint64 fileId, const QString &title)
+{
+    AppError error;
+    if (m_packageService->updateTitle(fileId, title, &error))
+        return {{QStringLiteral("ok"), true}};
+    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+}
+
+QVariantMap TypeEngine::ratePackage(qint64 fileId, int score)
+{
+    AppError error;
+    if (m_packageService->ratePackage(fileId, score, &error))
+        return {{QStringLiteral("ok"), true}};
+    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+}
+
+QVariantMap TypeEngine::deletePackage(qint64 fileId)
+{
+    AppError error;
+    if (m_packageService->deletePackage(fileId, &error))
+        return {{QStringLiteral("ok"), true}};
+    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+}
+
+QVariantMap TypeEngine::regenerateCover(qint64 fileId)
+{
+    AppError error;
+    if (m_packageService->regenerateCover(fileId, &error))
+        return {{QStringLiteral("ok"), true}};
+    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+}
+
+QString TypeEngine::packageDir(qint64 fileId)
+{
+    if (!m_library->isOpen())
+        return QString();
+
+    const QString libraryName = m_library->currentName();
+    AppError error;
+    const QVariantMap detail = m_packageService->packageDetail(fileId, &error);
+    if (!error.ok() || detail.isEmpty())
+        return QString();
+
+    const int bucket = detail.value(QStringLiteral("storage_path")).toInt();
+    const QString linkAddress = m_library->config().entry(libraryName).linkAddress;
+    return StorageService::packageDir(linkAddress, bucket, fileId);
+}
+
+QVariantMap TypeEngine::readFields(qint64 fileId) const
+{
+    // QML 入口：无错误指针，失败时 QML 侧按空对象处理
+    return readFields(fileId, nullptr);
 }
 
 QVariantMap TypeEngine::readFields(qint64 fileId, AppError *error) const
@@ -144,16 +262,17 @@ QUrl TypeEngine::viewerUrl(const QString &form) const
     return package == nullptr ? QUrl() : QUrl::fromLocalFile(package->viewerPath);
 }
 
-PackageViewContext *TypeEngine::createPackageView(qint64 fileId)
+QObject *TypeEngine::createPackageView(qint64 fileId)
 {
     AppError error;
     const QVariantMap detail = m_packageService->packageDetail(fileId, &error);
     if (!error.ok() || detail.isEmpty())
         return nullptr;
 
+    // parent 传 nullptr + JavaScriptOwnership：生命周期完全归 QML（GC 回收），
+    // 避免 C++ parent 链与 JS 所有权并存导致的退出期 use-after-free。
     auto *context = new PackageViewContext(fileId, m_paths, m_library, m_packageService, this,
-                                           this);
-    // QML 侧 Loader/Window 持有；JS 所有权，引用消失后 GC
+                                           nullptr);
     QQmlEngine::setObjectOwnership(context, QQmlEngine::JavaScriptOwnership);
     return context;
 }
@@ -169,6 +288,10 @@ QVariantMap TypeEngine::writeFields(qint64 fileId, const QVariantMap &values)
                 {QStringLiteral("message"), QStringLiteral("数据包不存在：#%1").arg(fileId)}};
 
     const QString form = detail.value(QStringLiteral("type_form")).toString();
+    // 拼 SQL 前的纵深防御：表名必须通过安全校验（与 StorageService 其余拼接点一致）
+    if (!StorageService::isSafeFormName(form))
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"), QStringLiteral("类型名非法：%1").arg(form)}};
     const TypePackage *package = enabledPackage(form);
     if (package == nullptr)
         return {{QStringLiteral("ok"), false},

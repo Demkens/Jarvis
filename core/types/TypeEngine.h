@@ -13,6 +13,8 @@ class EventBus;
 class LibraryService;
 class PackageService;
 class PackageViewContext;
+class SettingsService;
+class StorageService;
 class TypePackage;
 class TypePackageManager;
 
@@ -33,8 +35,8 @@ class TypeEngine : public QObject
 
 public:
     TypeEngine(AppPaths *paths, LibraryService *library, TypePackageManager *typePackages,
-               CreatorService *creators, PackageService *packages, EventBus *events,
-               QObject *parent = nullptr);
+               CreatorService *creators, PackageService *packages, StorageService *storage,
+               EventBus *events, SettingsService *settings, QObject *parent = nullptr);
 
     QVariantList enabledTypes() const { return m_enabledTypes; }
     QVariantList packages() const { return m_packageList; }
@@ -47,16 +49,45 @@ public:
     Q_INVOKABLE QUrl wizardUrl(const QString &form) const;
     Q_INVOKABLE QUrl viewerUrl(const QString &form) const;
 
-    // 制造查看器上下文（每次打开一个；QML 持有期间有效）
-    Q_INVOKABLE PackageViewContext *createPackageView(qint64 fileId);
+    // 制造查看器上下文（每次打开一个；QML 持有期间有效）。
+    // 返回 QObject*（运行时实为 PackageViewContext*）而非自定义类型指针——
+    // 后者未注册进 QML 元类型系统，引擎会报 Unknown method return type。
+    Q_INVOKABLE QObject *createPackageView(qint64 fileId);
 
     // ---- 分表通用 CRUD ----
-    // 读：file 行之外的分表字段（含 creatorName 解析结果）
-    QVariantMap readFields(qint64 fileId, AppError *error = nullptr) const;
+    // 读：file 行之外的分表字段（含 creatorName 解析结果）。
+    // QML 只能调单参版：AppError* 指针参数无法进入 QML 元方法表，
+    // 带指针的重载会被引擎过滤，QML 侧报 "not a function"。
+    // 双参版仅供 C++ 内部/测试获取错误信息。
+    Q_INVOKABLE QVariantMap readFields(qint64 fileId) const;
+    QVariantMap readFields(qint64 fileId, AppError *error) const;
 
     // 写：values 的键为字段名；creator 字段可传名字（find-or-create）或数字 id；
     // date 传空串置 NULL。成功后广播 PackageUpdated。
-    QVariantMap writeFields(qint64 fileId, const QVariantMap &values);
+    Q_INVOKABLE QVariantMap writeFields(qint64 fileId, const QVariantMap &values);
+
+    // ---- M4 资源页查询/操作（QML 门面，统一返回 {ok, message?, ...}）----
+    // 带条件分页查询：form 空=全部类型；keyword 标题模糊搜索；page 从 1 起（每页 M5 设置项）。
+    // 返回 {ok, total, pages, items[]}，items 含 creatorName/coverUrl（与 packages 同款拼接）。
+    Q_INVOKABLE QVariantMap queryPackages(const QString &form, const QString &keyword, int page);
+
+    // ---- M5 设置门面 ----
+    // 返回 {ok, pageSize, coverLongEdge, scoreRecentWeight}（当前内存值）
+    Q_INVOKABLE QVariantMap settings() const;
+
+    // 保存：values 键为 pageSize/coverLongEdge/scoreRecentWeight（缺省键保持现值）；
+    // 原子写 settings.json 成功后更新内存，并重新应用 setter 到 StorageService/PackageService
+    // （封面长边、评分权重立即生效；每页数量下次查询即用）。返回 {ok, message?}。
+    Q_INVOKABLE QVariantMap saveSettings(const QVariantMap &values);
+
+    // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 删除 / 重生成封面
+    Q_INVOKABLE QVariantMap updateTitle(qint64 fileId, const QString &title);
+    Q_INVOKABLE QVariantMap ratePackage(qint64 fileId, int score);
+    Q_INVOKABLE QVariantMap deletePackage(qint64 fileId);
+    Q_INVOKABLE QVariantMap regenerateCover(qint64 fileId);
+
+    // 包实体目录绝对路径（"打开实体位置"用）；离线/库未开/包不存在返回空串
+    Q_INVOKABLE QString packageDir(qint64 fileId);
 
 signals:
     void enabledTypesChanged();
@@ -66,13 +97,17 @@ private:
     const TypePackage *enabledPackage(const QString &form) const;
     QVariantList loadEnabledTypes() const;
     QVariantList loadPackages() const;
+    // 给包行附加 creatorName 与 coverUrl（loadPackages / queryPackages 共用）
+    QVariantList enrichRows(QVariantList rows) const;
 
     AppPaths *m_paths;
     LibraryService *m_library;
     TypePackageManager *m_typePackages;
     CreatorService *m_creators;
     PackageService *m_packageService;
+    StorageService *m_storage;
     EventBus *m_events;
+    SettingsService *m_settings;
 
     QVariantList m_enabledTypes;
     QVariantList m_packageList;

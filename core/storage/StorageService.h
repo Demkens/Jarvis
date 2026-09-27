@@ -66,6 +66,11 @@ public:
     // 当前库的实际库是否在线（链接库根目录可达；离线时禁止导入/导出）
     bool isLinkOnline() const;
 
+    // 重新生成某包封面（M4 右键"重新生成封面"）：
+    // 取 linkAddress/<桶>/<id>/ 内第一个图片文件为源，重写 envs 封面；
+    // 包目录缺失/无图片/生成失败均置 error 并返回 false。
+    bool regenerateCover(const QString &linkAddress, int bucket, qint64 id, AppError *error);
+
 private:
     bool generateCover(const QString &sourcePath, const QString &targetPath, AppError *error);
 

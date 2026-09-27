@@ -21,11 +21,12 @@ Item {
     property var groups: []
 
     function fileUrlToLocal(url) {
-        // FileDialog 返回 file:/// URL；统一转本地路径（Win: file:///D:/x → D:/x）
+        // FileDialog 返回 file:/// URL（含 %20 等百分号编码）；
+        // 统一解码成真实本地路径，C++ 侧才按此路径能找到文件（Win: file:///D:/x → D:/x）
         var s = String(url)
         if (s.indexOf("file:///") === 0)
-            return s.substring("file:///".length)
-        return s
+            s = s.substring("file:///".length)
+        return decodeURIComponent(s)
     }
 
     function submit() {
@@ -140,10 +141,10 @@ Item {
                                     onTextChanged: page.groups[index].title = text
                                 }
                                 Text {
+                                    // files 已是真实本地路径（fileUrlToLocal 已解码），直接取文件名
                                     text: page.groups[index].files.length + " 张图片，封面默认首张："
-                                          + decodeURIComponent(
-                                              String(page.groups[index].files[0])
-                                                  .split("/").pop().split("\\").pop())
+                                          + String(page.groups[index].files[0])
+                                              .split("/").pop().split("\\").pop()
                                     color: "#777777"
                                     font.pixelSize: 11
                                 }
@@ -153,7 +154,12 @@ Item {
                                 text: "移除该组"
                                 flat: true
                                 enabled: !submitBusy.running
-                                onClicked: page.groups.splice(index, 1)
+                                onClicked: {
+                                    // filter 返回新数组，触发 Repeater 刷新
+                                    page.groups = page.groups.filter(function (_, i) {
+                                        return i !== index
+                                    })
+                                }
                             }
                         }
                     }
@@ -179,11 +185,14 @@ Item {
             var files = []
             for (var i = 0; i < selectedFiles.length; ++i)
                 files.push(page.fileUrlToLocal(selectedFiles[i]))
+            // files 已是真实本地路径，直接取文件名去扩展名作默认标题
             var base = files.length > 0
-                ? decodeURIComponent(String(files[0]).split("/").pop().split("\\").pop()
-                                     .replace(/\.[^.]+$/, ""))
+                ? String(files[0]).split("/").pop().split("\\").pop()
+                                  .replace(/\.[^.]+$/, "")
                 : "untitled"
-            page.groups.push({title: base, files: files})
+            // 整数组替换（concat 返回新数组）强制 Repeater 刷新不可变模型；
+            // 直接 push 到 var 数组不会触发 model 变更通知，界面将毫无反应
+            page.groups = page.groups.concat([{title: base, files: files}])
         }
     }
 

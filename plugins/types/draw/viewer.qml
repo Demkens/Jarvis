@@ -27,13 +27,16 @@ Item {
         positionTimer.restart()
     }
 
-    // 打开时从浏览记忆续看（{"index": 3} → 第 3 张，索引 2）
-    Component.onCompleted: {
+    // 打开时从浏览记忆续看（{"index": 3} → 第 3 张，索引 2）。
+    // 注意：packageView 由外层 Loader.onLoaded 注入，晚于本组件 onCompleted 触发，
+    // 因此用 onPackageViewChanged 恢复位置，而不是 Component.onCompleted。
+    onPackageViewChanged: {
         if (packageView && packageView.positionJson.length > 0) {
             try {
                 var pos = JSON.parse(packageView.positionJson)
                 if (pos.index !== undefined)
-                    viewer.pageIndex = Math.max(0, pos.index - 1)
+                    // 上界 clamp：包文件被外部删减后记忆索引不得越界
+                    viewer.pageIndex = Math.max(0, Math.min(pos.index - 1, pageCount() - 1))
             } catch (e) { /* 损坏的位置忽略，从头开始 */ }
         }
     }

@@ -79,7 +79,11 @@ bool LibraryService::persistConfig(AppError *error)
 
 bool LibraryService::openEntry(const LibraryEntry &entry, AppError *error)
 {
-    return m_db.open(m_paths->databasePath(entry.name), error);
+    if (!m_db.open(m_paths->databasePath(entry.name), error))
+        return false;
+    // 打开既有库时同样补齐核心表到最新版本（与建库路径一致），保证旧库可迁移
+    SchemaManager schema;
+    return schema.ensureCoreSchema(m_db, error);
 }
 
 void LibraryService::setCurrent(const QString &name)
@@ -157,9 +161,12 @@ QVariantMap LibraryService::createLibrary(const QString &name,
             uniqueForms.append(form);
     }
 
-    const QString link = AppPaths::normalizeStored(linkAddress.trimmed());
+    QString link = AppPaths::normalizeStored(linkAddress.trimmed());
     if (link.isEmpty())
         return failResult(QStringLiteral("链接库目录不能为空"));
+    // 锚定绝对路径：相对路径会随进程 CWD 变化，后续导入/删除可能指向错误目录
+    if (!QFileInfo(link).isAbsolute())
+        link = AppPaths::normalizeStored(QDir::current().filePath(link));
 
     if (!m_paths->ensureRoot())
         return failResult(QStringLiteral("数据目录不可用：%1").arg(m_paths->envsRoot()));
@@ -282,8 +289,16 @@ QVariantMap LibraryService::switchLibrary(const QString &name)
     }
 
     m_config.currentName = name;
-    if (!persistConfig(&error))
-        qWarning().noquote() << "[library] currentDb 未能持久化:" << error.message;
+    if (!persistConfig(&error)) {
+        // 持久化失败：回滚内存 currentDb 并重开旧库，避免内存/磁盘不一致且界面误报成功
+        m_config.currentName = previousName;
+        if (!previousName.isEmpty())
+            openEntry(previousEntry, nullptr);
+        else
+            m_db.close();
+        qWarning().noquote() << "[library] currentDb 未能持久化，已回滚:" << error.message;
+        return failResult(error);
+    }
 
     setCurrent(name);
     qInfo().noquote() << "[library] 已切换到:" << name;

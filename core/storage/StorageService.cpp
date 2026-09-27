@@ -329,6 +329,40 @@ bool StorageService::isLinkOnline() const
     return QDir(m_library->config().entry(name).linkAddress).exists();
 }
 
+bool StorageService::regenerateCover(const QString &linkAddress, int bucket, qint64 id,
+                                     AppError *error)
+{
+    auto fail = [&](AppError::Code code, const QString &message) -> bool {
+        if (error != nullptr)
+            *error = AppError::fail(code, message);
+        return false;
+    };
+
+    const QString sourceDir = packageDir(linkAddress, bucket, id);
+    if (!QDir(sourceDir).exists())
+        return fail(AppError::Io, QStringLiteral("包目录缺失：%1").arg(sourceDir));
+
+    // 取包内第一个图片文件为封面源（与导入默认行为一致）
+    const QStringList images = QDir(sourceDir).entryList(
+        {QStringLiteral("*.jpg"), QStringLiteral("*.jpeg"), QStringLiteral("*.png"),
+         QStringLiteral("*.gif"), QStringLiteral("*.bmp"), QStringLiteral("*.webp")},
+        QDir::Files | QDir::Readable, QDir::Name);
+    if (images.isEmpty())
+        return fail(AppError::Io,
+                    QStringLiteral("包内无图片文件，无法生成封面：%1").arg(sourceDir));
+
+    const QString libraryName = m_library->currentName();
+    if (libraryName.isEmpty())
+        return fail(AppError::Validation, QStringLiteral("没有打开的库"));
+
+    const QString targetCover = coverPath(m_paths->coverDir(libraryName), bucket, id);
+    if (!generateCover(sourceDir + QLatin1Char('/') + images.first(), targetCover, error))
+        return false;
+
+    qInfo().noquote() << "[storage] 已重新生成封面: id =" << id << "桶 =" << bucket;
+    return true;
+}
+
 int StorageService::exportPackage(qint64 id, const QString &destDir, AppError *error)
 {
     auto fail = [&](AppError::Code code, const QString &message) -> int {
@@ -349,10 +383,12 @@ int StorageService::exportPackage(qint64 id, const QString &destDir, AppError *e
     QVariantMap row;
     DbAccess &db = m_library->dbAccess();
     if (!db.selectOne(QStringLiteral("SELECT storage_path FROM file WHERE id = :id"),
-                      {{QStringLiteral("id"), id}}, row, &local)
-        || !local.ok()) {
-        if (error != nullptr) *error = local;
-        return -1;
+                      {{QStringLiteral("id"), id}}, row, &local)) {
+        // 区分两种失败：查询真错误（local 非 ok）转发原错误；无结果走下方"数据包不存在"
+        if (!local.ok()) {
+            if (error != nullptr) *error = local;
+            return -1;
+        }
     }
     if (row.isEmpty())
         return fail(AppError::Validation, QStringLiteral("数据包不存在：#%1").arg(id));
@@ -374,6 +410,7 @@ int StorageService::exportPackage(qint64 id, const QString &destDir, AppError *e
 
     // 原样复制包内全部条目（draw 为扁平 001.ext；保留子目录以兼容未来类型）
     int copied = 0;
+    QStringList created; // 本次已复制条目，失败时回滚清理
     const QDir src(sourceDir);
     for (const QFileInfo &info :
          src.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
@@ -383,9 +420,19 @@ int StorageService::exportPackage(qint64 id, const QString &destDir, AppError *e
             ok = copyDirectoryRecursively(info.absoluteFilePath(), target);
         else
             ok = QFile::copy(info.absoluteFilePath(), target);
-        if (!ok)
+        if (!ok) {
+            // 失败回滚：删除本次已复制条目，避免残留半成品导致目标非空、重试死锁
+            for (const QString &made : created) {
+                const QFileInfo madeInfo(made);
+                if (madeInfo.isDir())
+                    QDir(made).removeRecursively();
+                else
+                    QFile::remove(made);
+            }
             return fail(AppError::Io,
                         QStringLiteral("导出复制失败：%1").arg(info.absoluteFilePath()));
+        }
+        created.append(target);
         ++copied;
     }
 
