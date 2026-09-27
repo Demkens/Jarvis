@@ -73,3 +73,11 @@ Thumbs.db
 
 database
 build
+
+# Jarvis v2 运行期生成（config.json、各库数据集、日志）
+envs/
+legacy/
+tests/
+
+# Qt Creator CMake 工程
+CMakeLists.txt.user*

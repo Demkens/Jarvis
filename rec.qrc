@@ -1,9 +1,0 @@
-<RCC>
-    <qresource prefix="/">
-        <file>resource/icons/file.svg</file>
-        <file>resource/icons/home.svg</file>
-        <file>resource/icons/night.svg</file>
-        <file>resource/icons/set.svg</file>
-        <file>resource/icons/sun.svg</file>
-    </qresource>
-</RCC>

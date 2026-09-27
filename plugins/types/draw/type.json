@@ -1,0 +1,13 @@
+{
+    "form": "draw",
+    "displayName": "画作",
+    "version": 1,
+    "coreMinVersion": "0.1.0",
+    "fields": [
+        { "name": "creator_id",    "type": "creator", "label": "画家",     "default": 0 },
+        { "name": "creation_date", "type": "date",    "label": "创作日期", "required": false }
+    ],
+    "packageLayout": { "kind": "imageSequence", "naming": "%03d" },
+    "browseOrder": "sequence",
+    "export": { "kind": "folder", "keepNames": true }
+}
