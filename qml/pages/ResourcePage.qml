@@ -13,6 +13,9 @@ Item {
     signal openViewer(int packageId)
     signal requestImport()
     signal exportPackage(int packageId)
+    // 打开详情窗口：DetailWindow 提升到 Main.qml 顶层（Window 不能挂在深层 Item 下，
+    // 否则弹窗不可见——见 M4 右键"打开详情"无反应问题），此处只转发 id。
+    signal openDetail(int packageId)
 
     // ---- 查询状态（JS 数组整体替换以触发模型刷新，避免 Qt 对原地 push 无通知的坑）----
     property var viewItems: []
@@ -728,7 +731,7 @@ Item {
             text: "打开详情"
             onTriggered: {
                 if (contextMenu.currentItem)
-                    detailWindow.openPackage(Number(contextMenu.currentItem.id))
+                    page.openDetail(Number(contextMenu.currentItem.id))
             }
         }
         MenuItem {
@@ -864,10 +867,5 @@ Item {
             pages.push(0)
         pages.push(total)
         return pages
-    }
-
-    // 详情窗口（右键"打开详情"）
-    DetailWindow {
-        id: detailWindow
     }
 }

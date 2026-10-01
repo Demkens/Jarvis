@@ -21,7 +21,7 @@ Application::Application(QObject *parent)
 
 Application::~Application() = default;
 
-bool Application::initialize()
+bool Application::initialize(const QString &libraryOverride)
 {
     m_paths = std::make_unique<AppPaths>(AppPaths::defaultEnvsRoot());
     m_eventBus = std::make_unique<EventBus>(this);
@@ -31,7 +31,7 @@ bool Application::initialize()
 
     m_library = std::make_unique<LibraryService>(m_paths.get(), m_typePackages.get(),
                                                  m_eventBus.get(), this);
-    m_library->startup();
+    m_library->startup(libraryOverride);
 
     // 依赖序：库服务（持有 DbAccess）→ 创作者 → 存储 → 包服务
     m_creators = std::make_unique<CreatorService>(&m_library->dbAccess());

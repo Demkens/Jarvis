@@ -128,6 +128,25 @@ void LibraryConfig::remove(const QString &name)
         currentName = createdDb.isEmpty() ? QString() : createdDb.first();
 }
 
+void LibraryConfig::rename(const QString &from, const QString &to)
+{
+    const auto it = m_entries.constFind(from);
+    if (it == m_entries.constEnd())
+        return;
+    LibraryEntry entry = it.value();
+    entry.name = to;
+    m_entries.remove(from);
+    m_entries.insert(to, entry);
+
+    // 保持建库顺序不变：createdDb 中 from 的位置替换为 to
+    const int idx = createdDb.indexOf(from);
+    if (idx >= 0)
+        createdDb[idx] = to;
+
+    if (currentName == from)
+        currentName = to;
+}
+
 QList<LibraryEntry> LibraryConfig::entriesInOrder() const
 {
     QList<LibraryEntry> result;

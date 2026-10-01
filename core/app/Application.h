@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QString>
 #include <memory>
 
 class QQmlApplicationEngine;
@@ -25,8 +26,9 @@ public:
     explicit Application(QObject *parent = nullptr);
     ~Application() override;
 
-    // 装配顺序：路径/事件 → 类型包发现 → 库服务启动（恢复上次库）
-    bool initialize();
+    // 装配顺序：路径/事件 → 类型包发现 → 库服务启动（libraryOverride 非空时为多进程
+    // 入口指定的库；为空则恢复上次库）
+    bool initialize(const QString &libraryOverride = {});
 
     void bindToQml(QQmlApplicationEngine &engine);
 

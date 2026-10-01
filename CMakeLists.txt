@@ -12,6 +12,9 @@ qt_standard_project_setup(REQUIRES 6.5)
 # qml 分目录组织（pages/dialogs），不逐目录写 qmldir
 qt_policy(SET QTP0004 OLD)
 
+# 图标等图片资源：显式开 AUTORCC，把 images.qrc 作为 jarvis 源由 rcc 编译（按 qrc 内部 prefix/alias）
+set(CMAKE_AUTORCC ON)
+
 # ---- jarvis_core：全部核心逻辑（可执行与无头测试共用此静态库）----
 set (CORE_HEADERS
     core/app/Application.h
@@ -72,16 +75,21 @@ qt_add_qml_module(jarvis
     VERSION 1.0
     QML_FILES
         qml/Main.qml
-        qml/ResourcePage.qml
-        qml/DetailWindow.qml
-        qml/dialogs/CreateLibraryDialog.qml
-        qml/dialogs/DeleteLibraryDialog.qml
+        qml/pages/ResourcePage.qml
+        qml/windows/DetailWindow.qml
+        qml/include/TopBar.qml
+        qml/include/LeftBar.qml
+        qml/include/AppDialogs.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/SettingsDialog.qml
         qml/windows/ViewerWindow.qml
+        qml/windows/LibraryManagerWindow.qml
 )
 
 target_link_libraries(jarvis PRIVATE jarvis_core)
+
+# 图标等通用图片资源：作为源加入 jarvis，由 AUTORCC 编译（按 qrc 内部 prefix/alias）
+target_sources(jarvis PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/images.qrc")
 
 # 开发期保留控制台输出；M5 打包时再置 TRUE
 set_target_properties(jarvis PROPERTIES WIN32_EXECUTABLE FALSE)

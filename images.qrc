@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="img/Resources/title/arrow.png">res/title/arrow.png</file>
+        <file alias="img/Resources/title/close.png">res/title/close.png</file>
+        <file alias="img/Resources/title/max.png">res/title/max.png</file>
+        <file alias="img/Resources/title/message.png">res/title/message.png</file>
+        <file alias="img/Resources/title/min.png">res/title/min.png</file>
+        <file alias="img/Resources/title/mini.png">res/title/mini.png</file>
+        <file alias="img/Resources/title/record.png">res/title/record.png</file>
+        <file alias="img/Resources/title/search.png">res/title/search.png</file>
+        <file alias="img/Resources/title/setting.png">res/title/setting.png</file>
+        <file alias="img/Resources/title/skin.png">res/title/skin.png</file>
+        <file alias="img/Resources/title/user.png">res/title/user.png</file>
+    </qresource>
+</RCC>

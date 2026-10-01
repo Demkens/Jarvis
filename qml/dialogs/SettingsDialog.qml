@@ -1,4 +1,4 @@
-// 全局设置对话框（M5）：每页数量 / 封面长边 / 评分权重。
+// 全局设置对话框（M5）：每页数量 / 封面长边 / 评分权重 / 主题（二期占位）。
 // 打开时从核心读当前值（typeEngine.settings），保存时写回
 // （typeEngine.saveSettings → envs/settings.json 原子写 + 立即应用到各服务）。
 // 对话框不感知"设置如何生效"，只负责取值/提交；成功与否经 onAccepted 由调用方提示。
@@ -11,13 +11,15 @@ Dialog {
 
     title: "设置"
     modal: true
-    anchors.centerIn: parent ? parent : null
+    // 相对窗口 overlay 居中（不依赖父 Item 尺寸，避免 header 内定位/裁剪问题）
+    x: (Overlay.overlay.width - width) / 2
+    y: (Overlay.overlay.height - height) / 2
     width: 440
-    height: 300
+    height: 340
     standardButtons: Dialog.NoButton
     padding: 0
 
-    // 保存失败时的错误文案（状态栏由 Main.qml 的 onAccepted 负责提示成功）
+    // 保存失败时的错误文案（状态栏已移除，失败经 onAccepted 由调用方处理）
     property string errText: ""
 
     background: Rectangle {
@@ -86,6 +88,33 @@ Dialog {
                 from: 0; to: 100; stepSize: 5
                 editable: true
                 Layout.preferredWidth: 130
+            }
+        }
+
+        // 主题选择（二期占位：仅记录所选，暂不写回核心设置）
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+            Label {
+                text: "主题"
+                Layout.fillWidth: true
+                font.pixelSize: 14
+            }
+            RadioButton {
+                id: themeLight
+                text: "浅色"
+                checked: true
+            }
+            RadioButton {
+                id: themeDark
+                text: "深色"
+            }
+            RadioButton {
+                id: themeSystem
+                text: "跟随系统"
+            }
+            ButtonGroup {
+                buttons: [themeLight, themeDark, themeSystem]
             }
         }
 

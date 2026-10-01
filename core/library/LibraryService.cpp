@@ -1,10 +1,17 @@
 #include "LibraryService.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QProcess>
+#include <QSaveFile>
 #include <QVariantList>
 
 #include "events/EventBus.h"
@@ -17,6 +24,29 @@ namespace {
 
 // Windows 文件系统非法字符 + 路径分隔；库名即 envs 下目录名
 const QString kIllegalNameChars = QStringLiteral("\\/:*?\"<>|");
+
+// 递归复制目录（导出/导入库时复制 cover、还原库内容用）
+bool copyDirectoryRecursively(const QString &srcPath, const QString &destPath)
+{
+    QDir src(srcPath);
+    if (!src.exists())
+        return false;
+    QDir dest(destPath);
+    if (!dest.exists() && !dest.mkpath(QStringLiteral(".")))
+        return false;
+
+    for (const QFileInfo &info :
+         src.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        const QString target = dest.filePath(info.fileName());
+        if (info.isDir()) {
+            if (!copyDirectoryRecursively(info.absoluteFilePath(), target))
+                return false;
+        } else if (!QFile::copy(info.absoluteFilePath(), target)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 } // namespace
 
@@ -116,7 +146,7 @@ QVariantList LibraryService::libraries() const
     return list;
 }
 
-void LibraryService::startup()
+void LibraryService::startup(const QString &overrideName)
 {
     AppError error;
     if (!m_paths->ensureRoot(&error)) {
@@ -128,12 +158,30 @@ void LibraryService::startup()
         return;
     }
 
-    const QString name = m_config.currentName;
-    if (name.isEmpty() || !m_config.contains(name))
+    // 多进程入口：--library 指定的库优先；否则恢复上次库
+    const QString forced = overrideName.trimmed();
+    if (!forced.isEmpty()) {
+        if (!m_config.contains(forced)) {
+            qWarning().noquote() << "[library] 指定的库不存在，以无库状态启动:" << forced;
+            return;
+        }
+        if (openEntry(m_config.entry(forced), &error)) {
+            // 记录为最近打开，供下次无参启动恢复
+            m_config.currentName = forced;
+            persistConfig(&error);
+            setCurrent(forced);
+        } else {
+            qWarning().noquote() << "[library] 指定的库无法打开，以无库状态启动:" << error.message;
+        }
+        return;
+    }
+
+    const QString last = m_config.currentName;
+    if (last.isEmpty() || !m_config.contains(last))
         return;
 
-    if (openEntry(m_config.entry(name), &error)) {
-        setCurrent(name);
+    if (openEntry(m_config.entry(last), &error)) {
+        setCurrent(last);
     } else {
         qWarning().noquote() << "[library] 上次的库无法打开，以无库状态启动:"
                              << error.message;
@@ -143,6 +191,21 @@ void LibraryService::startup()
 QVariantMap LibraryService::createLibrary(const QString &name,
                                           const QString &linkAddress,
                                           const QStringList &forms)
+{
+    return createLibraryImpl(name, linkAddress, forms, /*bind=*/true);
+}
+
+QVariantMap LibraryService::registerLibrary(const QString &name,
+                                            const QString &linkAddress,
+                                            const QStringList &forms)
+{
+    return createLibraryImpl(name, linkAddress, forms, /*bind=*/false);
+}
+
+QVariantMap LibraryService::createLibraryImpl(const QString &name,
+                                              const QString &linkAddress,
+                                              const QStringList &forms,
+                                              bool bind)
 {
     // ---- 1. 输入校验（开发文档 4.3 步骤 1）----
     const QString trimmedName = name.trimmed();
@@ -188,21 +251,30 @@ QVariantMap LibraryService::createLibrary(const QString &name,
     if (!linkInfo.exists() || !linkInfo.isDir())
         return failResult(QStringLiteral("链接库路径不是文件夹：%1").arg(QDir::toNativeSeparators(link)));
 
-    // ---- 3. 失败回滚所需的现场快照 ----
+    // ---- 3. 失败回滚所需的现场快照（仅 bind 模式需要恢复旧库绑定）----
     const LibraryConfig configBackup = m_config;
-    const QString previousName = m_currentName;
-    const LibraryEntry previousEntry = previousName.isEmpty() ? LibraryEntry{}
-                                                              : m_config.entry(previousName);
+    const QString previousName = bind ? m_currentName : QString();
+    const LibraryEntry previousEntry = (bind && !previousName.isEmpty())
+                                           ? m_config.entry(previousName)
+                                           : LibraryEntry{};
+
+    // 建库用连接：bind 复用当前连接；register 用临时连接，不影响已打开的库
+    DbAccess tmpDb;
+    DbAccess *db = bind ? &m_db : &tmpDb;
 
     auto cleanup = [&] {
-        m_db.close();
+        if (bind)
+            m_db.close();
+        else
+            tmpDb.close();
         QDir(envDir).removeRecursively();
         if (!linkExisted)
             QDir(link).rmdir(QStringLiteral(".")); // 仅当为空时成功，绝不删用户原有数据
         m_config = configBackup;
-        if (!previousName.isEmpty())
+        if (bind && !previousName.isEmpty())
             openEntry(previousEntry, nullptr);
-        setCurrent(previousName);
+        if (bind)
+            setCurrent(previousName);
     };
 
     // ---- 4. 内嵌数据集目录 envs/<库名>/ 与 cover/ ----
@@ -221,28 +293,27 @@ QVariantMap LibraryService::createLibrary(const QString &name,
         dbFile.close();
     }
 
-    // 切换连接到新库（旧连接在 DbAccess::open 内关闭）
     AppError error;
-    if (!m_db.open(dbPath, &error)) {
+    if (!db->open(dbPath, &error)) {
         cleanup();
         return failResult(error);
     }
 
     // ---- 6. 事务内建核心表 + 各类型分表 ----
     SchemaManager schema;
-    if (!schema.ensureCoreSchema(m_db, &error)) {
+    if (!schema.ensureCoreSchema(*db, &error)) {
         cleanup();
         return failResult(error);
     }
     for (const QString &form : uniqueForms) {
         const TypePackage *package = m_typePackages->package(form);
-        if (!schema.enableTypePackage(m_db, *package, &error)) {
+        if (!schema.enableTypePackage(*db, *package, &error)) {
             cleanup();
             return failResult(QStringLiteral("类型 %1 启用失败：%2").arg(form, error.message));
         }
     }
 
-    // ---- 7. 写 config.json 并切换当前库 ----
+    // ---- 7. 写 config.json（bind 模式才切换当前库）----
     LibraryEntry entry;
     entry.name = trimmedName;
     entry.linkAddress = link;
@@ -250,15 +321,22 @@ QVariantMap LibraryService::createLibrary(const QString &name,
     entry.creationDate = QDateTime::currentSecsSinceEpoch();
     entry.schemaVersion = SchemaManager::kCoreSchemaVersion;
     m_config.upsert(entry);
-    m_config.currentName = trimmedName;
+    if (bind)
+        m_config.currentName = trimmedName;
     if (!persistConfig(&error)) {
         cleanup();
         return failResult(error);
     }
 
-    qInfo().noquote() << "[library] 已建库并切换:" << trimmedName
-                      << "链接库:" << link << "类型:" << uniqueForms;
-    setCurrent(trimmedName);
+    // register 模式：临时连接用完即关，m_db 与 currentName 均保持原状
+    if (!bind)
+        tmpDb.close();
+
+    qInfo().noquote() << "[library]" << (bind ? QStringLiteral("已建库并切换:")
+                                              : QStringLiteral("已登记库:"))
+                      << trimmedName << "链接库:" << link << "类型:" << uniqueForms;
+    if (bind)
+        setCurrent(trimmedName);
     emit librariesChanged();
 
     QVariantMap result = okResult();
@@ -353,5 +431,245 @@ QVariantMap LibraryService::deleteLibrary(const QString &name, bool deleteEntity
     qInfo().noquote() << "[library] 已删除库:" << name
                       << (deleteEntityFiles ? QStringLiteral("（含实体文件）")
                                             : QStringLiteral("（保留实体文件）"));
+    return okResult();
+}
+
+QVariantMap LibraryService::renameLibrary(const QString &oldName, const QString &newName)
+{
+    const QString old = oldName.trimmed();
+    const QString renamed = newName.trimmed();
+
+    if (!m_config.contains(old))
+        return failResult(QStringLiteral("库不存在：%1").arg(old));
+    // 当前打开的库在此进程持有连接，Windows 下目录被锁，无法改名
+    if (old == m_currentName)
+        return failResult(QStringLiteral("已打开的库不能重命名：%1").arg(old));
+
+    QString reason;
+    if (!isValidLibraryName(renamed, &reason))
+        return failResult(reason);
+    if (m_config.contains(renamed))
+        return failResult(QStringLiteral("已存在同名库：%1").arg(renamed));
+
+    const QString oldDir = m_paths->libraryDir(old);
+    const QString newDir = m_paths->libraryDir(renamed);
+    if (!QFileInfo::exists(oldDir))
+        return failResult(QStringLiteral("数据集目录不存在：%1").arg(QDir::toNativeSeparators(oldDir)));
+    if (QFileInfo::exists(newDir))
+        return failResult(QStringLiteral("目标目录已存在：%1").arg(QDir::toNativeSeparators(newDir)));
+
+    // 1. 目录重命名（db + cover 随目录整体移动）
+    if (!QFile::rename(oldDir, newDir))
+        return failResult(QStringLiteral("目录重命名失败（可能被占用）：%1").arg(QDir::toNativeSeparators(oldDir)));
+
+    // 2. db 文件名 <old>.db → <new>.db
+    const QString oldDb = newDir + QLatin1Char('/') + old + QStringLiteral(".db");
+    const QString newDb = newDir + QLatin1Char('/') + renamed + QStringLiteral(".db");
+    if (QFileInfo::exists(oldDb) && !QFile::rename(oldDb, newDb)) {
+        QFile::rename(newDir, oldDir); // 回滚目录
+        return failResult(QStringLiteral("数据库文件重命名失败：%1").arg(QDir::toNativeSeparators(oldDb)));
+    }
+
+    // 3. 登记更新 + 持久化；失败回滚文件系统与内存
+    const LibraryConfig configBackup = m_config;
+    m_config.rename(old, renamed);
+    AppError error;
+    if (!persistConfig(&error)) {
+        m_config = configBackup;
+        if (QFileInfo::exists(newDb))
+            QFile::rename(newDb, oldDb);
+        QFile::rename(newDir, oldDir);
+        return failResult(error);
+    }
+
+    emit librariesChanged();
+    qInfo().noquote() << "[library] 已重命名库:" << old << "→" << renamed;
+    return okResult();
+}
+
+QVariantMap LibraryService::exportLibrary(const QString &name, const QString &destDir)
+{
+    const QString trimmed = name.trimmed();
+    if (!m_config.contains(trimmed))
+        return failResult(QStringLiteral("库不存在：%1").arg(trimmed));
+
+    const QString dest = QDir::cleanPath(destDir.trimmed());
+    if (dest.isEmpty())
+        return failResult(QStringLiteral("导出目标目录不能为空"));
+
+    QDir destRoot(dest);
+    if (!destRoot.exists() && !destRoot.mkpath(QStringLiteral(".")))
+        return failResult(QStringLiteral("导出目标目录无法创建：%1").arg(QDir::toNativeSeparators(dest)));
+
+    const QString targetDir = destRoot.filePath(trimmed);
+    if (QFileInfo::exists(targetDir))
+        return failResult(QStringLiteral("导出目标已存在：%1").arg(QDir::toNativeSeparators(targetDir)));
+    if (!QDir().mkpath(targetDir))
+        return failResult(QStringLiteral("导出目录创建失败：%1").arg(QDir::toNativeSeparators(targetDir)));
+
+    auto rollback = [&] { QDir(targetDir).removeRecursively(); };
+
+    // 导出当前库时先 checkpoint，把 WAL 内容落盘到主 db，保证副本一致
+    if (trimmed == m_currentName && m_db.isOpen())
+        m_db.execute(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
+
+    // 1. 复制 db 文件
+    const QString srcDb = m_paths->databasePath(trimmed);
+    const QString dstDb = targetDir + QLatin1Char('/') + trimmed + QStringLiteral(".db");
+    if (!QFile::copy(srcDb, dstDb)) {
+        rollback();
+        return failResult(QStringLiteral("数据库复制失败：%1").arg(QDir::toNativeSeparators(srcDb)));
+    }
+
+    // 2. 复制 cover/ 目录（早期库可能无封面，缺失则跳过）
+    const QString srcCover = m_paths->coverDir(trimmed);
+    if (QFileInfo::exists(srcCover)
+        && !copyDirectoryRecursively(srcCover, targetDir + QStringLiteral("/cover"))) {
+        rollback();
+        return failResult(QStringLiteral("封面目录复制失败：%1").arg(QDir::toNativeSeparators(srcCover)));
+    }
+
+    // 3. 写清单（导入恢复 name/linkAddress/support 等登记信息）
+    const LibraryEntry entry = m_config.entry(trimmed);
+    QJsonObject manifest;
+    manifest.insert(QStringLiteral("format"), QStringLiteral("jarvis-library"));
+    manifest.insert(QStringLiteral("name"), entry.name);
+    manifest.insert(QStringLiteral("linkAddress"), entry.linkAddress);
+    QJsonArray support;
+    for (const QString &form : entry.support)
+        support.append(form);
+    manifest.insert(QStringLiteral("support"), support);
+    manifest.insert(QStringLiteral("creationDate"), static_cast<double>(entry.creationDate));
+    manifest.insert(QStringLiteral("schemaVersion"), entry.schemaVersion);
+
+    QSaveFile manifestFile(targetDir + QStringLiteral("/library.json"));
+    if (!manifestFile.open(QIODevice::WriteOnly)
+        || manifestFile.write(QJsonDocument(manifest).toJson(QJsonDocument::Indented)) < 0
+        || !manifestFile.commit()) {
+        rollback();
+        return failResult(QStringLiteral("清单写入失败：%1").arg(QDir::toNativeSeparators(targetDir)));
+    }
+
+    qInfo().noquote() << "[library] 已导出库:" << trimmed << "→" << QDir::toNativeSeparators(targetDir);
+    return okResult();
+}
+
+QVariantMap LibraryService::importLibrary(const QString &sourceDir)
+{
+    const QString src = QDir::cleanPath(sourceDir.trimmed());
+    if (src.isEmpty())
+        return failResult(QStringLiteral("待导入目录不能为空"));
+
+    const QDir srcDir(src);
+    if (!srcDir.exists())
+        return failResult(QStringLiteral("待导入目录不存在：%1").arg(QDir::toNativeSeparators(src)));
+
+    // 1. 读清单
+    const QString manifestPath = srcDir.filePath(QStringLiteral("library.json"));
+    QFile manifestFile(manifestPath);
+    if (!manifestFile.open(QIODevice::ReadOnly))
+        return failResult(QStringLiteral("找不到清单文件：%1").arg(QDir::toNativeSeparators(manifestPath)));
+    const QJsonDocument doc = QJsonDocument::fromJson(manifestFile.readAll());
+    manifestFile.close();
+    if (!doc.isObject())
+        return failResult(QStringLiteral("清单不是合法 JSON：%1").arg(QDir::toNativeSeparators(manifestPath)));
+
+    const QJsonObject root = doc.object();
+    if (root.contains(QStringLiteral("format"))
+        && root.value(QStringLiteral("format")).toString() != QStringLiteral("jarvis-library"))
+        return failResult(QStringLiteral("清单格式不受支持：%1")
+                              .arg(root.value(QStringLiteral("format")).toString()));
+
+    const QString name = root.value(QStringLiteral("name")).toString().trimmed();
+    QString reason;
+    if (!isValidLibraryName(name, &reason))
+        return failResult(reason);
+    if (m_config.contains(name))
+        return failResult(QStringLiteral("已存在同名库：%1").arg(name));
+
+    const QString linkAddress = root.value(QStringLiteral("linkAddress")).toString().trimmed();
+    if (linkAddress.isEmpty())
+        return failResult(QStringLiteral("清单缺少链接库目录"));
+
+    QStringList support;
+    const QJsonArray supportArr = root.value(QStringLiteral("support")).toArray();
+    for (const QJsonValue &form : supportArr) {
+        const QString f = form.toString().trimmed();
+        if (!f.isEmpty() && !support.contains(f))
+            support.append(f);
+    }
+    for (const QString &form : support) {
+        if (m_typePackages->package(form) == nullptr)
+            return failResult(QStringLiteral("类型包未安装：%1").arg(form));
+    }
+
+    if (!m_paths->ensureRoot())
+        return failResult(QStringLiteral("数据目录不可用：%1").arg(m_paths->envsRoot()));
+
+    const QString targetDir = m_paths->libraryDir(name);
+    if (QFileInfo::exists(targetDir))
+        return failResult(QStringLiteral("数据集目录已存在：%1").arg(QDir::toNativeSeparators(targetDir)));
+    QDir target(targetDir);
+    if (!target.mkpath(QStringLiteral(".")))
+        return failResult(QStringLiteral("数据集目录创建失败：%1").arg(QDir::toNativeSeparators(targetDir)));
+
+    auto rollback = [&] { QDir(targetDir).removeRecursively(); };
+
+    // 2. 复制除清单外的全部条目（db + cover），失败整体回滚
+    const QDir src2(src);
+    for (const QFileInfo &info :
+         src2.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        if (info.fileName() == QStringLiteral("library.json"))
+            continue;
+        const QString targetPath = target.filePath(info.fileName());
+        const bool ok = info.isDir()
+                            ? copyDirectoryRecursively(info.absoluteFilePath(), targetPath)
+                            : QFile::copy(info.absoluteFilePath(), targetPath);
+        if (!ok) {
+            rollback();
+            return failResult(QStringLiteral("复制失败：%1").arg(info.absoluteFilePath()));
+        }
+    }
+
+    // 3. 校验 db 确实存在（清单有但文件缺失则失败，避免登记后打不开）
+    const QString dbPath = m_paths->databasePath(name);
+    if (!QFileInfo::exists(dbPath)) {
+        rollback();
+        return failResult(QStringLiteral("导入包缺少数据库文件：%1").arg(QDir::toNativeSeparators(dbPath)));
+    }
+
+    // 4. 登记（与 registerLibrary 一致：不绑定当前库、不改 currentName）
+    const LibraryConfig configBackup = m_config;
+    LibraryEntry entry;
+    entry.name = name;
+    entry.linkAddress = AppPaths::normalizeStored(linkAddress);
+    entry.support = support;
+    entry.creationDate = static_cast<qint64>(root.value(QStringLiteral("creationDate")).toDouble(0));
+    entry.schemaVersion = root.value(QStringLiteral("schemaVersion")).toInt(1);
+    m_config.upsert(entry);
+
+    AppError error;
+    if (!persistConfig(&error)) {
+        m_config = configBackup;
+        rollback();
+        return failResult(error);
+    }
+
+    emit librariesChanged();
+    qInfo().noquote() << "[library] 已导入库:" << name << "来源:" << QDir::toNativeSeparators(src);
+    return okResult();
+}
+
+QVariantMap LibraryService::launchLibrary(const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (!m_config.contains(trimmed))
+        return failResult(QStringLiteral("库不存在：%1").arg(trimmed));
+
+    const QString program = QCoreApplication::applicationFilePath();
+    if (!QProcess::startDetached(program, {QStringLiteral("--library"), trimmed}))
+        return failResult(QStringLiteral("无法启动库进程：%1").arg(program));
+
+    qInfo().noquote() << "[library] 已拉起库进程:" << trimmed;
     return okResult();
 }

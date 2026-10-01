@@ -34,6 +34,9 @@ public:
     LibraryEntry entry(const QString &name) const; // 不存在返回 name 填充的默认值
     void upsert(const LibraryEntry &entry);
     void remove(const QString &name);
+    // 重命名：保持建库顺序不变地重键（from→to），并同步 currentName 指向。
+    // 调用方需保证 from 存在、to 不存在。
+    void rename(const QString &from, const QString &to);
     QList<LibraryEntry> entriesInOrder() const;
 
 private:
