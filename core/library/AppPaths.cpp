@@ -43,7 +43,8 @@ QString AppPaths::libraryDir(const QString &name) const
 
 QString AppPaths::databasePath(const QString &name) const
 {
-    return libraryDir(name) + QLatin1Char('/') + name + QStringLiteral(".db");
+    // db 文件名统一为 library.db，不再随库名变化（旧数据由 LibraryService 迁移）
+    return libraryDir(name) + QStringLiteral("/library.db");
 }
 
 QString AppPaths::coverDir(const QString &name) const

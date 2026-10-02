@@ -1,4 +1,4 @@
-// 左栏导航（开发文档 8.1 四键）：资源显示 / 批量操作 / 数据统计 / 短笔记。
+// 左栏导航（开发文档 8.1 三键）：资源显示 / 数据统计 / 短笔记。
 // 当前仅「资源显示」已实装（常驻高亮），其余为灰色占位，无交互。
 // 提示链路已移除（原占位点击提示不再保留）。
 import QtQuick
@@ -47,10 +47,6 @@ Rectangle {
             label: "资源显示"
             active: true
             available: true
-        }
-        NavItem {
-            label: "批量操作"
-            available: false
         }
         NavItem {
             label: "数据统计"

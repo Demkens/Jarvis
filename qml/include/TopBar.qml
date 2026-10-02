@@ -11,8 +11,8 @@ import "../dialogs"
 Item {
     id: topBar
 
-    signal settingsSaved()
-    signal libraryAreaClicked()
+    signal libraryAreaClicked()     // 信号: 打开库管理窗口
+    signal refreshRequested()       // 信号: 刷新资源列表
 
     // 顶栏衬底
     Rectangle {
@@ -77,6 +77,54 @@ Item {
                 }
             }
 
+            // 分隔线
+            Rectangle {
+                width: 2; height: 22
+                color: "#455164"
+
+                Layout.alignment: Qt.AlignVCenter
+                Layout.leftMargin: 5
+                Layout.rightMargin: 5
+            }
+            
+            // 文件菜单：导入数据包 / 刷新
+            Rectangle {
+                id: fileArea
+                height: 26
+                implicitWidth: fileLabel.implicitWidth + 20
+                radius: 4
+                color: fileAreaMouse.containsMouse || fileMenu.visible ? '#525c75' : "transparent"
+
+                Layout.alignment: Qt.AlignVCenter
+
+                Text {
+                    id: fileLabel
+                    anchors.centerIn: parent
+                    text: "文件"
+                    font.pixelSize: 13
+                    color: "#e6eaf2"
+                }
+
+                MouseArea {
+                    id: fileAreaMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: fileMenu.popup(fileArea, 0, fileArea.height)
+                }
+
+                Menu {
+                    id: fileMenu
+                    MenuItem {
+                        text: "导入数据"
+                        onTriggered: importDialog.open()
+                    }
+                    MenuItem {
+                        text: "刷新页面"
+                        onTriggered: topBar.refreshRequested()
+                    }
+                }
+            }
+
             Item { Layout.fillWidth: true }
 
             // 设置入口
@@ -118,8 +166,11 @@ Item {
     // 设置弹窗实例
     SettingsDialog {
         id: settingsDialog
-        onAccepted: topBar.settingsSaved()
+        onAccepted: topBar.refreshRequested()
     }
+
+    // 导入弹窗实例
+    ImportDialog {id: importDialog}
 
     // 自绘控件：窗口控制按钮
     component WindowButton: Image {

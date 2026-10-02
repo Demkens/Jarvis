@@ -7,7 +7,7 @@
 // 运行期路径服务：统一回答"envs 在哪、某库的 db/封面在哪"。
 // 目录约定：
 //   <envsRoot>/config.json
-//   <envsRoot>/<库名>/<库名>.db
+//   <envsRoot>/<库名>/library.db
 //   <envsRoot>/<库名>/cover/
 class AppPaths
 {

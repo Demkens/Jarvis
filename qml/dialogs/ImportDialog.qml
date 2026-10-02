@@ -1,6 +1,5 @@
-// 核心导入对话框（开发文档 5.4 / 7.4）
-// 职责：选择类型与导入通道 → 装载类型包向导页 或 预处理确认页 → 调核心执行器 → 结果报告。
-// 对话框本身不识别任何具体类型，类型差异由类型包页面和核心扫描规则承担。
+// 数据包导入对话框
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -8,24 +7,23 @@ import QtQuick.Dialogs
 
 Dialog {
     id: dialog
-
-    title: "导入数据包"
+    parent: Overlay.overlay
+    x: Math.round((parent.width - width) / 2)
+    y: Math.round((parent.height - height) / 2)
+    width: 840; height: 640
+    title: "导入数据"
     modal: true
-    anchors.centerIn: parent ? parent : null
-    width: 840
-    height: 640
     standardButtons: Dialog.Close
-    padding: 0
+    padding: 0      // 弹窗内容区与边框间的内边距
 
-    // 当前选中的类型 form / 通道
     property string form: ""
-    property string channel: "wizard"   // wizard | preprocess
-    property var scanPlans: []          // 预处理确认页可编辑的计划副本
+    property string channel: "wizard"
+    property var scanPlans: []
     property var lastResult: ({})
-    // 库已打开（依赖 currentName 的 NOTIFY）。isOnline() 是方法调用不建绑定依赖，
-    // enabled 必须与它联算，才能在建库/切库后刷新禁用状态。
+
     readonly property bool libOpen: libraryService.currentName !== ""
 
+    // 函数: 将导入弹窗的状态复位
     function resetDialog() {
         form = ""
         channel = "wizard"
@@ -33,8 +31,7 @@ Dialog {
         lastResult = ({})
         steps.currentIndex = 0
         wizardLoader.active = false
-        // 库已打开且类型表就绪时，默认选中第一个可用类型并赋值 form，
-        // 保证"下一步"立即可用（Component.onCompleted 在启动时执行、当时无库，不能依赖它）
+
         if (typeCombo.count > 0) {
             typeCombo.currentIndex = 0
             form = typeCombo.currentValue.form
@@ -129,6 +126,10 @@ Dialog {
             onLoaded: {
                 item.form = dialog.form
                 item.plansSubmitted.connect(function (result) { dialog.showResult(result) })
+                item.backRequested.connect(function () {
+                    wizardLoader.active = false
+                    steps.currentIndex = 0
+                })
             }
         }
 
@@ -152,7 +153,7 @@ Dialog {
                 }
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "返回"
+                    text: "上一步"
                     onClicked: steps.currentIndex = 0
                 }
                 Button {

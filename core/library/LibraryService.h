@@ -40,8 +40,8 @@ public:
                                             const QStringList &forms);
     Q_INVOKABLE QVariantMap switchLibrary(const QString &name);
     Q_INVOKABLE QVariantMap deleteLibrary(const QString &name, bool deleteEntityFiles);
-    // 重命名库（当前打开的库会被拒绝）：重命名 envs/<old> 目录与内部 <old>.db 文件，
-    // 并保序更新 config。返回 {ok, message}。
+    // 重命名库（当前打开的库会被拒绝）：重命名 envs/<old> 目录（db 文件名统一为
+    // library.db，随目录整体移动），并保序更新 config。返回 {ok, message}。
     Q_INVOKABLE QVariantMap renameLibrary(const QString &oldName, const QString &newName);
     // 导出内嵌数据集到 destDir/<name>/（db + cover + library.json 清单）。
     Q_INVOKABLE QVariantMap exportLibrary(const QString &name, const QString &destDir);

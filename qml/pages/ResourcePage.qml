@@ -11,7 +11,6 @@ Item {
 
     // 与 Main.qml 的协作信号
     signal openViewer(int packageId)
-    signal requestImport()
     signal exportPackage(int packageId)
     // 打开详情窗口：DetailWindow 提升到 Main.qml 顶层（Window 不能挂在深层 Item 下，
     // 否则弹窗不可见——见 M4 右键"打开详情"无反应问题），此处只转发 id。
@@ -155,7 +154,7 @@ Item {
             Layout.fillHeight: true
             spacing: 0
 
-            // ---- 顶行：搜索 / 类型筛选 / 视图切换 / 刷新 ----
+            // ---- 顶行：搜索 / 类型筛选 / 视图切换 ----
             RowLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
@@ -225,41 +224,6 @@ Item {
                         onClicked: page.gridMode = false
                     }
                 }
-
-                Rectangle {
-                    Layout.preferredWidth: 68
-                    Layout.preferredHeight: 34
-                    radius: 4
-                    color: "#e6eaf2"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "刷新"
-                        color: "#2b2b2b"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: page.reload()
-                    }
-                }
-
-                // 导入入口（顶栏"新建库"常驻后，导入按钮落在资源页工具栏）
-                Rectangle {
-                    Layout.preferredWidth: 96
-                    Layout.preferredHeight: 34
-                    radius: 4
-                    color: "#3d6ecd"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "导入数据包"
-                        color: "#ffffff"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: page.requestImport()
-                    }
-                }
             }
 
             // ---- 操作结果提示 ----
@@ -281,31 +245,11 @@ Item {
                 Layout.fillHeight: true
                 visible: page.totalCount === 0 && libraryService.currentName !== ""
                 color: "transparent"
-                ColumnLayout {
+                Text {
                     anchors.centerIn: parent
-                    spacing: 12
-                    Text {
-                        Layout.alignment: Qt.AlignHCenter
-                        text: "库里还没有数据包"
-                        color: "#888888"
-                        font.pixelSize: 16
-                    }
-                    Rectangle {
-                        Layout.preferredWidth: 150
-                        Layout.preferredHeight: 36
-                        radius: 5
-                        color: "#3d6ecd"
-                        Text {
-                            anchors.centerIn: parent
-                            text: "导入数据包"
-                            color: "#ffffff"
-                            font.pixelSize: 14
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: page.requestImport()
-                        }
-                    }
+                    text: "库无文件，待导入"
+                    color: "#888888"
+                    font.pixelSize: 16
                 }
             }
 

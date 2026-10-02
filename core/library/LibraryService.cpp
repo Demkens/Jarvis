@@ -462,22 +462,12 @@ QVariantMap LibraryService::renameLibrary(const QString &oldName, const QString 
     if (!QFile::rename(oldDir, newDir))
         return failResult(QStringLiteral("目录重命名失败（可能被占用）：%1").arg(QDir::toNativeSeparators(oldDir)));
 
-    // 2. db 文件名 <old>.db → <new>.db
-    const QString oldDb = newDir + QLatin1Char('/') + old + QStringLiteral(".db");
-    const QString newDb = newDir + QLatin1Char('/') + renamed + QStringLiteral(".db");
-    if (QFileInfo::exists(oldDb) && !QFile::rename(oldDb, newDb)) {
-        QFile::rename(newDir, oldDir); // 回滚目录
-        return failResult(QStringLiteral("数据库文件重命名失败：%1").arg(QDir::toNativeSeparators(oldDb)));
-    }
-
-    // 3. 登记更新 + 持久化；失败回滚文件系统与内存
+    // 2. 登记更新 + 持久化；失败回滚文件系统与内存
     const LibraryConfig configBackup = m_config;
     m_config.rename(old, renamed);
     AppError error;
     if (!persistConfig(&error)) {
         m_config = configBackup;
-        if (QFileInfo::exists(newDb))
-            QFile::rename(newDb, oldDb);
         QFile::rename(newDir, oldDir);
         return failResult(error);
     }
@@ -513,9 +503,9 @@ QVariantMap LibraryService::exportLibrary(const QString &name, const QString &de
     if (trimmed == m_currentName && m_db.isOpen())
         m_db.execute(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
 
-    // 1. 复制 db 文件
+    // 1. 复制 db 文件（文件名统一为 library.db）
     const QString srcDb = m_paths->databasePath(trimmed);
-    const QString dstDb = targetDir + QLatin1Char('/') + trimmed + QStringLiteral(".db");
+    const QString dstDb = targetDir + QStringLiteral("/library.db");
     if (!QFile::copy(srcDb, dstDb)) {
         rollback();
         return failResult(QStringLiteral("数据库复制失败：%1").arg(QDir::toNativeSeparators(srcDb)));

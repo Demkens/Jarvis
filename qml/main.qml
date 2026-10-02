@@ -13,62 +13,69 @@ import "windows"
 Item {
     id: root
 
-    readonly property bool libraryOpen: libraryService.currentName !== ""
-
+    // 有库 → 进主窗口；无库 → 库管理门禁。
     Component.onCompleted: {
-        if (root.libraryOpen)
-            mainWin.show()
-        else
-            libraryManager.show()
+        if (libraryService.currentName !== ""){
+            mainWinLoader.active = true
+            mainWinLoader.item.show()
+        } else {
+            managerLoader.active = true
+            managerLoader.item.show()     
+        }
     }
 
-    // 软件主窗口
-    ApplicationWindow {
-        id: mainWin
-        visible: false
-        width: 1360
-        height: 865
-        minimumWidth: 1300
-        minimumHeight: 800
-        color: "#181d27"
-        flags: Qt.FramelessWindowHint | Qt.Window | Qt.WindowSystemMenuHint
-               | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint
+    // 软件主窗口：随用随建，关闭即毁
+    Loader {
+        id: mainWinLoader
+        active: false
+        sourceComponent: ApplicationWindow {
+            visible: false
+            width: 1360; height: 865
+            minimumWidth: 1300; minimumHeight: 800
+            color: "#181d27"
+            flags: Qt.FramelessWindowHint | Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint
 
-        header: TopBar {
-            id: topRoot
-            height: 35
-            
-            onLibraryAreaClicked: libraryManager.show()
-            onSettingsSaved: resourcePageView.reload()
-        }
+            onClosing: mainWinLoader.active = false
 
-        // 左栏 + 主区
-        RowLayout {
-            anchors.fill: parent
-            spacing: 0
-
-            LeftBar {}
-
-            ResourcePage {
-                id: resourcePageView
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                onOpenViewer: function (id) { dialogs.openViewer(id) }
-                onOpenDetail: function (id) { dialogs.openDetail(id) }
-                onRequestImport: dialogs.openImport()
-                onExportPackage: function (id) { dialogs.openExport(id) }
+            header: TopBar {
+                id: topRoot
+                height: 35
+                
+                onLibraryAreaClicked: {
+                    managerLoader.active = true
+                    managerLoader.item.show()
+                }
+                onRefreshRequested: resourcePageView.reload()
             }
-        }
 
-        // 顶层对话框/窗口集中编排（导入/查看器/详情/包导出）
-        AppDialogs {
-            id: dialogs
+            // 左栏 + 主区
+            RowLayout {
+                anchors.fill: parent
+                spacing: 0
+
+                LeftBar { }
+
+                ResourcePage {
+                    id: resourcePageView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    onOpenViewer: function (id) { dialogs.openViewer(id) }
+                    onOpenDetail: function (id) { dialogs.openDetail(id) }
+                    onExportPackage: function (id) { dialogs.openExport(id) }
+                }
+            }
+
+            // 顶层对话框/窗口集中编排（导入/查看器/详情/包导出）
+            AppDialogs {id: dialogs}
         }
     }
 
-    // 库管理窗口
-    LibraryManagerWindow {
-        id: libraryManager
-        visible: false
+    // 库管理窗口：随用随建，关闭即毁
+    Loader {
+        id: managerLoader
+        active: false
+        sourceComponent: LibraryManagerWindow {
+            onClosing: managerLoader.active = false
+        }
     }
 }

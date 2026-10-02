@@ -16,6 +16,8 @@ Item {
 
     // 提交完成（无论成败）通知外层切到结果页
     signal plansSubmitted(var result)
+    // 请求返回上一步（由外层切回类型/通道选择页）
+    signal backRequested()
 
     // 分组模型：每次「添加一组图片」生成一个包
     property var groups: []
@@ -86,6 +88,10 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Button {
+                text: "上一步"
+                onClicked: page.backRequested()
+            }
             Button {
                 text: "＋ 添加一组图片"
                 enabled: !submitBusy.running

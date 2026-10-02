@@ -1,6 +1,6 @@
-// 顶层对话框/窗口实例的集中编排（导入/查看器/详情/包导出）。
+// 顶层对话框/窗口实例的集中编排（查看器/详情/包导出）。
 // 建库/删库/库切换已上移至库管理窗口（LibraryManagerWindow），不归此处管理；
-// 设置弹窗已下放至 TopBar 就地实例化。
+// 设置弹窗与导入弹窗均已下放至 TopBar 就地实例化。
 // Main.qml 只负责"转发哪个入口触发哪扇窗"，本组件负责实例与各回调结果的处理。
 // 状态栏/提示链路已移除，操作结果仅控制台日志。
 import QtQuick
@@ -8,7 +8,6 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 
-import "../dialogs"
 import "../windows"
 
 Item {
@@ -18,7 +17,6 @@ Item {
     property int _exportTargetId: 0
 
     // ---- 对外可调用方法：Main 的信号处理器转入此处 ----
-    function openImport() { importDialog.open() }
     function openViewer(id) { viewerWindow.openPackage(id) }
     // 详情窗口：与 ViewerWindow 同级顶层实例化（Window 挂在深层 Item 下会弹不出）
     function openDetail(id) { detailWindow.openPackage(id) }
@@ -29,10 +27,6 @@ Item {
     }
 
     // ---- 实例定义与回调 ----
-    ImportDialog {
-        id: importDialog
-    }
-
     ViewerWindow {
         id: viewerWindow
         onOpenFailed: function (message) { console.warn("[viewer] " + message) }
