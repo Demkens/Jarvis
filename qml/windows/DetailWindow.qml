@@ -118,7 +118,9 @@ Window {
                 Text { text: window.detail.title || "untitled"; color: "#2b2b2b"; font.pixelSize: 14; font.bold: true; wrapMode: Text.WrapAnywhere }
 
                 Text { text: "类型：" + window.formDisplayName(window.detail.type_form); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "创作者：" + (window.detail.creatorName || "anonymous"); color: "#444444"; font.pixelSize: 12 }
+                Text { text: "创作者：" + (window.detail.creatorName || "anonymous")
+                       + (window.detail.creatorCount > 1 ? " 等 " + window.detail.creatorCount + " 人" : "")
+                       ; color: "#444444"; font.pixelSize: 12 }
                 Text { text: "创作日期：" + (window.detail.creation_date || "—"); color: "#444444"; font.pixelSize: 12 }
                 Text { text: "评分：" + (window.detail.score > 0 ? window.detail.score : "未评分"); color: "#444444"; font.pixelSize: 12 }
                 Text { text: "大小：" + window.formatBytes(window.detail.size); color: "#444444"; font.pixelSize: 12 }

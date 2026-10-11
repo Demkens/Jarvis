@@ -1,5 +1,7 @@
 #include "CreatorService.h"
 
+#include <QRegularExpression>
+
 #include "library/DbAccess.h"
 
 namespace {
@@ -138,4 +140,19 @@ QString CreatorService::displayName(qint64 creatorId, AppError *error) const
         return QStringLiteral("anonymous");
     return m_db->scalar(QStringLiteral("SELECT name FROM creator WHERE id = :id"),
                         {{QStringLiteral("id"), creatorId}}, error).toString();
+}
+
+QStringList CreatorService::splitNames(const QString &text)
+{
+    // 常见分隔符统一视为一个字符类；QString::split 遇相邻分隔符会产生空项，逐项清理
+    const QStringList raw = text.split(QRegularExpression(QStringLiteral("[,，;；、|\\n\\r]")),
+                                       Qt::SkipEmptyParts);
+    QStringList names;
+    names.reserve(raw.size());
+    for (const QString &item : raw) {
+        const QString trimmed = item.trimmed();
+        if (!trimmed.isEmpty())
+            names.append(trimmed);
+    }
+    return names;
 }

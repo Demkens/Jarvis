@@ -62,9 +62,14 @@ public:
     Q_INVOKABLE QVariantMap readFields(qint64 fileId) const;
     QVariantMap readFields(qint64 fileId, AppError *error) const;
 
-    // 写：values 的键为字段名；creator 字段可传名字（find-or-create）或数字 id；
-    // date 传空串置 NULL。成功后广播 PackageUpdated。
+    // 写：values 的键为字段名；date 传空串置 NULL。成功后广播 PackageUpdated。
+    // 创作者多对多不走此入口，请用 writeCreators。
     Q_INVOKABLE QVariantMap writeFields(qint64 fileId, const QVariantMap &values);
+
+    // 写创作者多对多：names 为分隔符拼接文本（splitNames 拆分，第一个为主要创作者）；
+    // 事务内整体替换该包的 file_creator 行（先删后插，空文本=清空关联）。
+    // 返回 {ok, message?}；成功后广播 PackageUpdated。
+    Q_INVOKABLE QVariantMap writeCreators(qint64 fileId, const QString &names);
 
     // ---- M4 资源页查询/操作（QML 门面，统一返回 {ok, message?, ...}）----
     // 带条件分页查询：form 空=全部类型；keyword 标题模糊搜索；page 从 1 起（每页 M5 设置项）。

@@ -9,6 +9,7 @@
 #include "creator/CreatorService.h"
 #include "events/EventBus.h"
 #include "library/AppPaths.h"
+#include "library/DbAccess.h"
 #include "library/LibraryService.h"
 #include "package/PackageService.h"
 #include "settings/SettingsService.h"
@@ -131,6 +132,8 @@ QVariantList TypeEngine::enrichRows(QVariantList rows) const
         const QVariantMap detail = m_packageService->packageDetail(id, &detailError);
         if (detailError.ok() && detail.contains(QStringLiteral("creatorName")))
             row.insert(QStringLiteral("creatorName"), detail.value(QStringLiteral("creatorName")));
+        if (detailError.ok() && detail.contains(QStringLiteral("creatorCount")))
+            row.insert(QStringLiteral("creatorCount"), detail.value(QStringLiteral("creatorCount")));
 
         const QString coverAbs = StorageService::coverPath(
             m_paths->coverDir(libraryName), bucket, id);
@@ -323,21 +326,7 @@ QVariantMap TypeEngine::writeFields(qint64 fileId, const QVariantMap &values)
         const QString declaredType = declaredTypes.value(name);
         QVariant stored = it.value();
 
-        if (declaredType == QStringLiteral("creator")) {
-            // 传名字 → find-or-create；传数字 → 直接当 id
-            bool numeric = false;
-            const qint64 asId = stored.toLongLong(&numeric);
-            if (numeric && asId >= 0) {
-                stored = asId;
-            } else {
-                const qint64 resolved = m_creators->resolveOrCreate(stored.toString(),
-                                                                    CreatorService::Person,
-                                                                    &error);
-                if (resolved < 0)
-                    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
-                stored = resolved;
-            }
-        } else if (declaredType == QStringLiteral("date")) {
+        if (declaredType == QStringLiteral("date")) {
             // 空串 → NULL（未知日期）；非空须满足 YYYY / YYYY-MM / YYYY-MM-DD
             const QString text = stored.toString().trimmed();
             if (!StorageService::isValidCreationDate(text))
@@ -360,6 +349,58 @@ QVariantMap TypeEngine::writeFields(qint64 fileId, const QVariantMap &values)
                 .arg(form, setClauses.join(QStringLiteral(", "))),
             params, &error))
         return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    emit m_events->packageUpdated(fileId);
+    return {{QStringLiteral("ok"), true}};
+}
+
+QVariantMap TypeEngine::writeCreators(qint64 fileId, const QString &names)
+{
+    // 数据包存在性校验（复用详情读取；文件不存在/库未开时 detail 为空）
+    AppError error;
+    const QVariantMap detail = readFields(fileId, &error);
+    if (!error.ok() || detail.isEmpty())
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"),
+                 error.ok() ? QStringLiteral("数据包不存在：#%1").arg(fileId) : error.message}};
+
+    // 拆分 + 逐个 find-or-create（顺序即 sort_order，第一个为主要创作者）
+    QList<qint64> ids;
+    const QStringList namesList = CreatorService::splitNames(names);
+    ids.reserve(namesList.size());
+    for (const QString &name : namesList) {
+        const qint64 id = m_creators->resolveOrCreate(name, CreatorService::Person, &error);
+        if (id < 0)
+            return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+        ids.append(id);
+    }
+
+    // 事务内整体替换该包的关联行（空列表 = 清空，显示层兜底 anonymous）
+    DbAccess &db = m_library->dbAccess();
+    if (!db.transaction(&error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    if (!db.execute(QStringLiteral("DELETE FROM file_creator WHERE file_id = :file_id"),
+                    {{QStringLiteral("file_id"), fileId}}, &error)) {
+        db.rollback();
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    }
+    for (int index = 0; index < ids.size(); ++index) {
+        if (!db.execute(QStringLiteral(
+                            "INSERT INTO file_creator (file_id, creator_id, sort_order) "
+                            "VALUES (:file_id, :creator_id, :sort_order)"),
+                        {{QStringLiteral("file_id"), fileId},
+                         {QStringLiteral("creator_id"), ids.at(index)},
+                         {QStringLiteral("sort_order"), index}},
+                        &error)) {
+            db.rollback();
+            return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+        }
+    }
+    if (!db.commit(&error)) {
+        db.rollback();
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    }
 
     emit m_events->packageUpdated(fileId);
     return {{QStringLiteral("ok"), true}};

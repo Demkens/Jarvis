@@ -16,8 +16,8 @@ Item {
 
     // 提交完成（无论成败）通知外层切到结果页
     signal plansSubmitted(var result)
-    // 请求返回上一步（由外层切回类型/通道选择页）
-    signal backRequested()
+    // 请求取消（关闭导入弹窗；类型/通道选择已移入文件菜单，不再有可返回的上一步）
+    signal cancelRequested()
 
     // 分组模型：每次「添加一组图片」生成一个包
     property var groups: []
@@ -70,11 +70,11 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
-            Label { text: "画家（批量）"; font.pixelSize: 13 }
+            Label { text: "创作者（批量）"; font.pixelSize: 13 }
             TextField {
                 id: creatorField
                 Layout.preferredWidth: 180
-                placeholderText: "留空为 anonymous"
+                placeholderText: "多个用逗号/顿号分隔，留空为 anonymous"
                 font.pixelSize: 13
             }
             Label { text: "创作日期（批量）"; font.pixelSize: 13 }
@@ -89,8 +89,8 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Button {
-                text: "上一步"
-                onClicked: page.backRequested()
+                text: "取消"
+                onClicked: page.cancelRequested()
             }
             Button {
                 text: "＋ 添加一组图片"

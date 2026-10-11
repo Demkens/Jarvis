@@ -114,8 +114,9 @@ Item {
         if (page.previewId > 0) {
             if (titleField.text !== (page.previewDetail.title || ""))
                 typeEngine.updateTitle(page.previewId, titleField.text)
-            if (creatorField.text !== (page.previewDetail.creatorName || ""))
-                typeEngine.writeFields(page.previewId, {"creator_id": creatorField.text})
+            var joined = (page.previewDetail.creators || []).join("、")
+            if (creatorField.text !== joined)
+                typeEngine.writeCreators(page.previewId, creatorField.text)
         }
         var id = Number(modelData.id)
         page.previewId = id
@@ -447,15 +448,15 @@ Item {
                     }
                 }
 
-                // 创作者（可编辑，find-or-create 语义由核心处理）
+                // 创作者（多对多：逗号/顿号分隔，第一个为主要创作者；find-or-create 由核心处理）
                 Text { text: "创作者"; color: "#888888"; font.pixelSize: 11 }
                 TextField {
                     id: creatorField
                     Layout.fillWidth: true
-                    text: page.previewDetail.creatorName || ""
+                    text: (page.previewDetail.creators || []).join("、")
                     selectByMouse: true
                     onEditingFinished: {
-                        var r = typeEngine.writeFields(page.previewId, {"creator_id": text})
+                        var r = typeEngine.writeCreators(page.previewId, text)
                         if (!r.ok)
                             page.showToast("创作者修改失败：" + (r.message || ""))
                         else
@@ -554,6 +555,7 @@ Item {
                 Text {
                     width: parent.width
                     text: (modelData.creatorName || "anonymous")
+                          + (modelData.creatorCount > 1 ? " 等 " + modelData.creatorCount + " 人" : "")
                           + "  ·  " + (modelData.type_form || "")
                     elide: Text.ElideRight
                     color: "#888888"
@@ -628,6 +630,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: (modelData.creatorName || "anonymous")
+                              + (modelData.creatorCount > 1 ? " 等 " + modelData.creatorCount + " 人" : "")
                               + "  ·  " + (modelData.type_form || "")
                         elide: Text.ElideRight
                         color: "#888888"

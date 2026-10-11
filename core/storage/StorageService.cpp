@@ -192,18 +192,12 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         if (error != nullptr) *error = pragmaError;
         return -1;
     }
-    bool hasCreatorColumn = false;
     bool hasDateColumn = false;
     for (const QVariantMap &column : columns) {
         const QString name = column.value(QStringLiteral("name")).toString();
-        if (name == QStringLiteral("creator_id"))
-            hasCreatorColumn = true;
-        else if (name == QStringLiteral("creation_date"))
+        if (name == QStringLiteral("creation_date"))
             hasDateColumn = true;
     }
-    if (!plan.creatorName.trimmed().isEmpty() && !hasCreatorColumn)
-        return fail(AppError::Conflict,
-                    QStringLiteral("类型 %1 的分表不支持创作者字段").arg(plan.form));
     if (!creationDate.isEmpty() && !hasDateColumn)
         return fail(AppError::Conflict,
                     QStringLiteral("类型 %1 的分表不支持创作日期字段").arg(plan.form));
@@ -212,13 +206,18 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     if (!db.transaction(error))
         return -1;
 
-    qint64 creatorId = 0;
-    if (hasCreatorColumn && !plan.creatorName.trimmed().isEmpty()) {
-        creatorId = m_creators->resolveOrCreate(plan.creatorName, CreatorService::Person, error);
+    // 多创作者：拆分输入文本并逐个 find-or-create（顺序即 sort_order，第一个为主要创作者）；
+    // 空输入 → 空列表 → 不写关联，显示层兜底为 anonymous
+    QList<qint64> creatorIds;
+    const QStringList creatorNames = CreatorService::splitNames(plan.creatorName);
+    creatorIds.reserve(creatorNames.size());
+    for (const QString &name : creatorNames) {
+        const qint64 creatorId = m_creators->resolveOrCreate(name, CreatorService::Person, error);
         if (creatorId < 0) {
             db.rollback();
             return -1;
         }
+        creatorIds.append(creatorId);
     }
 
     // 分配 id：先写占位行取得自增 id，桶号随之确定（提交前回填）
@@ -275,28 +274,30 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     if (!generateCover(coverSource, targetCover, error))
         return abortImport(QStringLiteral("封面生成失败"));
 
-    // ---- 5. 写分表（列按分表实际结构裁剪）----
-    if (hasCreatorColumn || hasDateColumn) {
-        QStringList columnNames{QStringLiteral("id")};
-        QStringList valueNames{QStringLiteral(":id")};
-        QVariantMap params{{QStringLiteral("id"), id}};
-        if (hasCreatorColumn) {
-            columnNames.append(QStringLiteral("creator_id"));
-            valueNames.append(QStringLiteral(":creator_id"));
-            params.insert(QStringLiteral("creator_id"), creatorId);
-        }
-        if (hasDateColumn) {
-            columnNames.append(QStringLiteral("creation_date"));
-            valueNames.append(QStringLiteral(":creation_date"));
+    // ---- 5. 写分表（creator 已独立到 file_creator 关联表，分表只保留类型自有字段）----
+    if (hasDateColumn) {
+        const QVariantMap params = {
+            {QStringLiteral("id"), id},
             // 空日期存 NULL（未知）
-            params.insert(QStringLiteral("creation_date"),
-                          creationDate.isEmpty() ? QVariant() : QVariant(creationDate));
-        }
-        if (!db.execute(QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
-                            .arg(plan.form, columnNames.join(QLatin1Char(',')),
-                                 valueNames.join(QLatin1Char(','))),
+            {QStringLiteral("creation_date"),
+             creationDate.isEmpty() ? QVariant() : QVariant(creationDate)},
+        };
+        if (!db.execute(QStringLiteral("INSERT INTO %1 (id, creation_date) VALUES (:id, :creation_date)")
+                            .arg(plan.form),
                         params, error))
             return abortImport(QStringLiteral("分表写入失败"));
+    }
+
+    // ---- 5.5 写创作者关联（多对多；空列表不写 → 显示层兜底 anonymous）----
+    for (int index = 0; index < creatorIds.size(); ++index) {
+        if (!db.execute(QStringLiteral(
+                            "INSERT INTO file_creator (file_id, creator_id, sort_order) "
+                            "VALUES (:file_id, :creator_id, :sort_order)"),
+                        {{QStringLiteral("file_id"), id},
+                         {QStringLiteral("creator_id"), creatorIds.at(index)},
+                         {QStringLiteral("sort_order"), index}},
+                        error))
+            return abortImport(QStringLiteral("创作者关联写入失败"));
     }
 
     // ---- 6. 回填 size 与桶号 ----

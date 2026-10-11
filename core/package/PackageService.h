@@ -32,8 +32,8 @@ public:
     QVariantList queryPackages(const QString &form, const QString &keyword,
                                int offset, int limit, int *total, AppError *error = nullptr) const;
 
-    // 单包详情：file 行 + type_form + 分表字段合并（如 draw 的 creator_id/creation_date）
-    // + creatorName（creator_id>0 时解析）
+    // 单包详情：file 行 + type_form + 分表字段合并（如 draw 的 creation_date）
+    // + 创作者多对多（creatorName=主要创作者 / creators=全列表 / creatorCount=数量）
     QVariantMap packageDetail(qint64 id, AppError *error = nullptr) const;
 
     // ---- 修改 ----

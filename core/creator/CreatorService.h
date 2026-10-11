@@ -45,6 +45,10 @@ public:
     // 显示名；id=0 或未找到 → anonymous
     QString displayName(qint64 creatorId, AppError *error = nullptr) const;
 
+    // 把用户输入的多创作者文本拆分为名字列表（支持中英文逗号/分号/顿号/竖线/换行分隔），
+    // 逐项 trim 并丢弃空项；返回顺序即 sort_order 语义（第一个为主要创作者）。
+    static QStringList splitNames(const QString &text);
+
 private:
     DbAccess *m_db;
 };

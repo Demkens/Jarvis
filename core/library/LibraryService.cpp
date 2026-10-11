@@ -113,7 +113,25 @@ bool LibraryService::openEntry(const LibraryEntry &entry, AppError *error)
         return false;
     // 打开既有库时同样补齐核心表到最新版本（与建库路径一致），保证旧库可迁移
     SchemaManager schema;
-    return schema.ensureCoreSchema(m_db, error);
+    if (!schema.ensureCoreSchema(m_db, error))
+        return false;
+
+    // 补齐各启用类型的迁移段（版本门控，只跑缺失段；类型包文件缺失则跳过，不阻断打开）
+    AppError local;
+    const QList<QVariantMap> rows = m_db.select(QStringLiteral("SELECT form FROM type"), {}, &local);
+    if (!local.ok()) {
+        if (error != nullptr)
+            *error = local;
+        return false;
+    }
+    for (const QVariantMap &row : rows) {
+        const TypePackage *package = m_typePackages->package(row.value(QStringLiteral("form")).toString());
+        if (package == nullptr)
+            continue; // 包文件缺失：数据只读，跳过迁移
+        if (!schema.enableTypePackage(m_db, *package, error))
+            return false;
+    }
+    return true;
 }
 
 void LibraryService::setCurrent(const QString &name)

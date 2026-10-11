@@ -169,22 +169,24 @@ QVariantMap PackageService::packageDetail(qint64 id, AppError *error) const
                 }
             }
         }
-
-        // 创作者显示名（id=0 为 anonymous）
-        if (row.contains(QStringLiteral("creator_id"))) {
-            const qint64 creatorId = row.value(QStringLiteral("creator_id")).toLongLong();
-            if (creatorId > 0) {
-                const QString name = db.scalar(
-                    QStringLiteral("SELECT name FROM creator WHERE id = :id"),
-                    {{QStringLiteral("id"), creatorId}}, &local).toString();
-                if (failed(local, error))
-                    return {};
-                row.insert(QStringLiteral("creatorName"), name);
-            } else {
-                row.insert(QStringLiteral("creatorName"), QStringLiteral("anonymous"));
-            }
-        }
     }
+
+    // 创作者多对多（全局关联表，不依赖分表）：按 sort_order 列出全部名字。
+    // creatorName=主要创作者（空则 anonymous）；creators=完整列表；creatorCount=数量。
+    const QList<QVariantMap> creatorRows = db.select(
+        QStringLiteral("SELECT c.name FROM file_creator fc "
+                       "JOIN creator c ON c.id = fc.creator_id "
+                       "WHERE fc.file_id = :id ORDER BY fc.sort_order, fc.creator_id"),
+        {{QStringLiteral("id"), id}}, &local);
+    if (failed(local, error))
+        return {};
+    QStringList creators;
+    for (const QVariantMap &creatorRow : creatorRows)
+        creators.append(creatorRow.value(QStringLiteral("name")).toString());
+    row.insert(QStringLiteral("creators"), creators);
+    row.insert(QStringLiteral("creatorName"),
+               creators.isEmpty() ? QStringLiteral("anonymous") : creators.first());
+    row.insert(QStringLiteral("creatorCount"), creators.size());
     // 封面常驻 envs/<库>/cover/<桶>/<id>.jpg（离线也可显示）；缺失时置空 URL。
     // 预览面板 / 详情窗口直接消费此字段，与列表行 enrichRows 的 coverUrl 同款。
     const QString libraryName = m_library->currentName();

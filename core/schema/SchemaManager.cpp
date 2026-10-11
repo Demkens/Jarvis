@@ -54,6 +54,22 @@ const QStringList kCoreV1Statements = {
     QStringLiteral("INSERT OR IGNORE INTO creator (id, name, kind) VALUES (0, 'anonymous', 1)"),
 };
 
+// 核心 v2：创作者多对多关联表（替代各类型分表上的 creator_id 单值列）。
+// sort_order=0 为主要创作者，1、2… 为次要；file_id 级联删保证删除数据包时一并清理。
+const QStringList kCoreV2Statements = {
+    QStringLiteral(R"(
+        CREATE TABLE IF NOT EXISTS file_creator (
+            file_id    INTEGER NOT NULL,
+            creator_id INTEGER NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (file_id, creator_id),
+            FOREIGN KEY (file_id)    REFERENCES file(id)    ON DELETE CASCADE,
+            FOREIGN KEY (creator_id) REFERENCES creator(id)
+        ))"),
+    // 按创作者反查数据包（筛选/统计二期用）时避免全表扫描
+    QStringLiteral("CREATE INDEX IF NOT EXISTS idx_file_creator_creator ON file_creator(creator_id)"),
+};
+
 } // namespace
 
 bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
@@ -69,6 +85,8 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
         const QStringList *statements = nullptr;
         if (version == 1)
             statements = &kCoreV1Statements;
+        else if (version == 2)
+            statements = &kCoreV2Statements;
 
         if (statements == nullptr)
             continue;
@@ -163,10 +181,24 @@ bool SchemaManager::enableTypePackage(DbAccess &db, const TypePackage &package, 
     if (!parseMigrateScript(content, segments, error))
         return false;
 
+    // 已应用版本：读 type 表登记值；未登记（新库首启）视为 0 → 执行全部分段
+    AppError local;
+    const QVariant appliedVariant = db.scalar(
+        QStringLiteral("SELECT schema_version FROM type WHERE form = :form"),
+        {{QStringLiteral("form"), package.form}}, &local);
+    if (!local.ok()) {
+        if (error != nullptr)
+            *error = local;
+        return false;
+    }
+    const int applied = appliedVariant.toInt(); // 无行时 QVariant 无效 → 0
+
     if (!db.transaction(error))
         return false;
 
     for (const auto &[version, body] : segments) {
+        if (version <= applied)
+            continue; // 已应用段落跳过（老库打开时只补缺失段）
         if (!db.executeRawStatements(body, error)) {
             db.rollback();
             return false;
