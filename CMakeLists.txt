@@ -81,8 +81,6 @@ qt_add_qml_module(jarvis
         qml/include/FileMenu.qml
         qml/include/WindowControls.qml
         qml/include/WindowButton.qml
-        qml/include/FileMenuRow.qml
-        qml/include/SubTypePopup.qml
         qml/include/LeftBar.qml
         qml/include/AppDialogs.qml
         qml/dialogs/ImportDialog.qml

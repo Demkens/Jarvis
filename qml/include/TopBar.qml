@@ -95,7 +95,7 @@ Item {
             // 文件功能菜单
             FileMenu {
                 Layout.alignment: Qt.AlignVCenter
-                onFileImportRequested: topBar.fileImportRequested(form, channel)
+                onFileImportRequested: function (form, channel) { topBar.fileImportRequested(form, channel) }
                 onRefreshRequested: topBar.refreshRequested()
             }
 

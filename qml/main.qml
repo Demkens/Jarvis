@@ -46,7 +46,7 @@ Item {
                 // 槽函数: 刷新资源列表
                 onRefreshRequested: resourcePageView.reload()
                 // 槽函数: 选定了导入类型
-                onFileImportRequested: dialogs.startImport(form, channel)
+                onFileImportRequested: function (form, channel) { dialogs.startImport(form, channel) }
                 // 槽函数: 打开设置弹窗
                 onSettingsRequested: dialogs.openSettings()
             }
