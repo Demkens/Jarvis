@@ -76,11 +76,14 @@ qt_add_qml_module(jarvis
     QML_FILES
         qml/Main.qml
         qml/pages/ResourcePage.qml
+        qml/pages/StatisticsPage.qml
+        qml/pages/NotePage.qml
         qml/windows/DetailWindow.qml
         qml/include/TopBar.qml
         qml/include/FileMenu.qml
         qml/include/WindowControls.qml
         qml/include/WindowButton.qml
+        qml/include/NavItem.qml
         qml/include/LeftBar.qml
         qml/include/AppDialogs.qml
         qml/dialogs/ImportDialog.qml

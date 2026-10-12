@@ -37,6 +37,9 @@ Item {
 
             onClosing: mainWinLoader.active = false
 
+            // 当前页面索引：单一真相源，驱动左栏高亮与内容区切换
+            property int pageIndex: 0
+
             // 顶边功能栏
             header: TopBar {
                 height: 35
@@ -55,17 +58,34 @@ Item {
                 anchors.fill: parent
                 spacing: 0
 
-                // 左侧切页按钮栏
-                LeftBar { }
+                // 左侧导航栏
+                LeftBar {
+                    currentIndex: pageIndex
+                    onPageSelected: function (i) { pageIndex = i }
+                }
 
-                // 主页面区域
-                ResourcePage {
-                    id: resourcePageView
+                // 主内容区：三个页面按 currentIndex 切换
+                StackLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    onOpenViewer: function (id) { dialogs.openViewer(id) }
-                    onOpenDetail: function (id) { dialogs.openDetail(id) }
-                    onExportPackage: function (id) { dialogs.openExport(id) }
+                    currentIndex: pageIndex
+
+                    ResourcePage {
+                        id: resourcePageView
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        onOpenViewer: function (id) { dialogs.openViewer(id) }
+                        onOpenDetail: function (id) { dialogs.openDetail(id) }
+                        onExportPackage: function (id) { dialogs.openExport(id) }
+                    }
+                    StatisticsPage {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                    }
+                    NotePage {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                    }
                 }
             }
 

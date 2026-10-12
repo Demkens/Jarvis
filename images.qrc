@@ -11,5 +11,8 @@
         <file alias="img/Resources/title/setting.png">res/title/setting.png</file>
         <file alias="img/Resources/title/skin.png">res/title/skin.png</file>
         <file alias="img/Resources/title/user.png">res/title/user.png</file>
+        <file>res/title/data.png</file>
+        <file>res/title/file.png</file>
+        <file>res/title/note.png</file>
     </qresource>
 </RCC>
