@@ -1,6 +1,5 @@
-// 顶层对话框/窗口实例的集中编排（查看器/详情/包导出）。
+// 顶层对话框/窗口实例的集中编排（导入/设置/查看器/详情/包导出）。
 // 建库/删库/库切换已上移至库管理窗口（LibraryManagerWindow），不归此处管理；
-// 设置弹窗与导入弹窗均已下放至 TopBar 就地实例化。
 // Main.qml 只负责"转发哪个入口触发哪扇窗"，本组件负责实例与各回调结果的处理。
 // 状态栏/提示链路已移除，操作结果仅控制台日志。
 import QtQuick
@@ -9,6 +8,7 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 
 import "../windows"
+import "../dialogs"
 
 Item {
     id: appDialogs
@@ -16,17 +16,32 @@ Item {
     // 导出目标包 id（内部维护，Main 不感知细节）
     property int _exportTargetId: 0
 
+    // 设置弹窗确认后抛出（Main 转发给资源列表刷新）
+    signal settingsAccepted()
+
     // ---- 对外可调用方法：Main 的信号处理器转入此处 ----
     function openViewer(id) { viewerWindow.openPackage(id) }
     // 详情窗口：与 ViewerWindow 同级顶层实例化（Window 挂在深层 Item 下会弹不出）
     function openDetail(id) { detailWindow.openPackage(id) }
-
     function openExport(id) {
         _exportTargetId = id
         exportFolderPicker.open()
     }
+    // 设置弹窗（顶栏设置按钮 → Main → 此处）
+    function openSettings() { settingsDialog.open() }
+    // 导入弹窗直达指定步骤（文件菜单选定类型后 → Main → 此处）
+    function startImport(form, channel) { importDialog.start(form, channel) }
 
     // ---- 实例定义与回调 ----
+    ImportDialog {
+        id: importDialog
+    }
+
+    SettingsDialog {
+        id: settingsDialog
+        onAccepted: appDialogs.settingsAccepted()
+    }
+
     ViewerWindow {
         id: viewerWindow
         onOpenFailed: function (message) { console.warn("[viewer] " + message) }
