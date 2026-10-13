@@ -37,7 +37,7 @@ Item {
 
             onClosing: mainWinLoader.active = false
 
-            // 当前页面索引：单一真相源，驱动左栏高亮与内容区切换
+            // 当前页面索引
             property int pageIndex: 0
 
             // 顶边功能栏
@@ -64,7 +64,7 @@ Item {
                     onPageSelected: function (i) { pageIndex = i }
                 }
 
-                // 主内容区：三个页面按 currentIndex 切换
+                // 主内容区
                 StackLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true

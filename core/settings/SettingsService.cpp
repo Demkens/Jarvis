@@ -18,7 +18,6 @@ bool SettingsService::load(const QString &path, AppError *error)
 {
     // 先复位为默认值：重载（重建实例/测试）不会残留上次的修改
     m_pageSize = 50;
-    m_coverLongEdge = 400;
     m_scoreRecentWeight = 60;
 
     QFile file(path);
@@ -44,7 +43,6 @@ bool SettingsService::load(const QString &path, AppError *error)
 
     // setter 内部 clamp：JSON 中出现越界值也被收拢到范围
     setPageSize(root.value(QStringLiteral("pageSize")).toInt(m_pageSize));
-    setCoverLongEdge(root.value(QStringLiteral("coverLongEdge")).toInt(m_coverLongEdge));
     setScoreRecentWeight(root.value(QStringLiteral("scoreRecentWeight")).toInt(m_scoreRecentWeight));
     return true;
 }
@@ -56,7 +54,6 @@ bool SettingsService::save(const QString &path, AppError *error) const
 
     QJsonObject root;
     root.insert(QStringLiteral("pageSize"), m_pageSize);
-    root.insert(QStringLiteral("coverLongEdge"), m_coverLongEdge);
     root.insert(QStringLiteral("scoreRecentWeight"), m_scoreRecentWeight);
 
     QSaveFile file(path);

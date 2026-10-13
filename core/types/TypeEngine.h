@@ -14,7 +14,6 @@ class LibraryService;
 class PackageService;
 class PackageViewContext;
 class SettingsService;
-class StorageService;
 class TypePackage;
 class TypePackageManager;
 
@@ -35,7 +34,7 @@ class TypeEngine : public QObject
 
 public:
     TypeEngine(AppPaths *paths, LibraryService *library, TypePackageManager *typePackages,
-               CreatorService *creators, PackageService *packages, StorageService *storage,
+               CreatorService *creators, PackageService *packages,
                EventBus *events, SettingsService *settings, QObject *parent = nullptr);
 
     QVariantList enabledTypes() const { return m_enabledTypes; }
@@ -77,12 +76,12 @@ public:
     Q_INVOKABLE QVariantMap queryPackages(const QString &form, const QString &keyword, int page);
 
     // ---- M5 设置门面 ----
-    // 返回 {ok, pageSize, coverLongEdge, scoreRecentWeight}（当前内存值）
+    // 返回 {ok, pageSize, scoreRecentWeight}（当前内存值）
     Q_INVOKABLE QVariantMap settings() const;
 
-    // 保存：values 键为 pageSize/coverLongEdge/scoreRecentWeight（缺省键保持现值）；
-    // 原子写 settings.json 成功后更新内存，并重新应用 setter 到 StorageService/PackageService
-    // （封面长边、评分权重立即生效；每页数量下次查询即用）。返回 {ok, message?}。
+    // 保存：values 键为 pageSize/scoreRecentWeight（缺省键保持现值）；
+    // 原子写 settings.json 成功后更新内存，并重新应用 setter 到 PackageService
+    // （评分权重立即生效；每页数量下次查询即用）。返回 {ok, message?}。
     Q_INVOKABLE QVariantMap saveSettings(const QVariantMap &values);
 
     // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 删除 / 重生成封面
@@ -110,7 +109,6 @@ private:
     TypePackageManager *m_typePackages;
     CreatorService *m_creators;
     PackageService *m_packageService;
-    StorageService *m_storage;
     EventBus *m_events;
     SettingsService *m_settings;
 

@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QDebug>
+#include <cmath>
 
 #include "common/Timestamps.h"
 #include "creator/CreatorService.h"
@@ -15,6 +16,10 @@
 namespace {
 
 constexpr qint64 kPackagesPerBucket = 5000;
+
+// 封面清晰度上限（固定值）：图片对角线像素。数据类型多、封面尺寸多样，
+// 用「长边」无法统一描述清晰度，暂按对角线归一，超过则等比缩小（仅缩小不放大）。
+constexpr int kCoverDiagonal = 512;
 
 // 递归复制目录（导出保留子目录结构用）
 bool copyDirectoryRecursively(const QString &srcPath, const QString &destPath)
@@ -270,7 +275,7 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         totalSize += QFileInfo(targetFile).size();
     }
 
-    // ---- 4. 封面（核心统一生成，长边 m_coverLongEdge）----
+    // ---- 4. 封面（核心统一生成，清晰度固定为对角线 kCoverDiagonal）----
     if (!generateCover(coverSource, targetCover, error))
         return abortImport(QStringLiteral("封面生成失败"));
 
@@ -453,10 +458,11 @@ bool StorageService::generateCover(const QString &sourcePath, const QString &tar
         return false;
     }
 
-    // 仅缩小不放大：长边超过上限时等比缩到上限（开发文档 5.3）
-    const int longEdge = qMax(image.width(), image.height());
-    if (longEdge > m_coverLongEdge) {
-        const qreal ratio = static_cast<qreal>(m_coverLongEdge) / longEdge;
+    // 仅缩小不放大：对角线超过上限时等比缩到上限（开发文档 5.3）
+    const qreal diagonal = std::hypot(static_cast<qreal>(image.width()),
+                                      static_cast<qreal>(image.height()));
+    if (diagonal > kCoverDiagonal) {
+        const qreal ratio = static_cast<qreal>(kCoverDiagonal) / diagonal;
         const int targetWidth = qMax(1, qRound(image.width() * ratio));
         const int targetHeight = qMax(1, qRound(image.height() * ratio));
         image = image.scaled(targetWidth, targetHeight, Qt::IgnoreAspectRatio,

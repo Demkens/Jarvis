@@ -19,7 +19,7 @@
 #include "types/TypePackageManager.h"
 
 TypeEngine::TypeEngine(AppPaths *paths, LibraryService *library, TypePackageManager *typePackages,
-                       CreatorService *creators, PackageService *packages, StorageService *storage,
+                       CreatorService *creators, PackageService *packages,
                        EventBus *events, SettingsService *settings, QObject *parent)
     : QObject(parent)
     , m_paths(paths)
@@ -27,7 +27,6 @@ TypeEngine::TypeEngine(AppPaths *paths, LibraryService *library, TypePackageMana
     , m_typePackages(typePackages)
     , m_creators(creators)
     , m_packageService(packages)
-    , m_storage(storage)
     , m_events(events)
     , m_settings(settings)
 {
@@ -168,18 +167,15 @@ QVariantMap TypeEngine::settings() const
 {
     return {{QStringLiteral("ok"), true},
             {QStringLiteral("pageSize"), m_settings->pageSize()},
-            {QStringLiteral("coverLongEdge"), m_settings->coverLongEdge()},
             {QStringLiteral("scoreRecentWeight"), m_settings->scoreRecentWeight()}};
 }
 
 QVariantMap TypeEngine::saveSettings(const QVariantMap &values)
 {
-    // 在现值基础上只覆盖传入键：QML 侧始终传全量三键，但这里不假设调用方传全
+    // 在现值基础上只覆盖传入键：QML 侧始终传全量键，但这里不假设调用方传全
     SettingsService next = *m_settings;
     if (values.contains(QStringLiteral("pageSize")))
         next.setPageSize(values.value(QStringLiteral("pageSize")).toInt());
-    if (values.contains(QStringLiteral("coverLongEdge")))
-        next.setCoverLongEdge(values.value(QStringLiteral("coverLongEdge")).toInt());
     if (values.contains(QStringLiteral("scoreRecentWeight")))
         next.setScoreRecentWeight(values.value(QStringLiteral("scoreRecentWeight")).toInt());
 
@@ -189,7 +185,6 @@ QVariantMap TypeEngine::saveSettings(const QVariantMap &values)
 
     // 落盘成功后才更新内存与各服务（避免写盘失败时状态不一致）
     *m_settings = next;
-    m_storage->setCoverLongEdge(next.coverLongEdge());
     m_packageService->setScoreRecentWeight(next.scoreRecentWeight() / 100.0);
     return {{QStringLiteral("ok"), true}};
 }

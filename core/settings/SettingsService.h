@@ -7,11 +7,10 @@
 
 class AppPaths;
 
-// 全局设置服务（M5）：把原先硬编码的三个配置项落库为 envs/settings.json。
+// 全局设置服务（M5）：把原先硬编码的配置项落库为 envs/settings.json。
 // 与 LibraryConfig 同款持久化模式（QJsonObject + QSaveFile 原子写），全局生效、不随库。
 // 项 / 默认 / 范围：
 // - pageSize           每页数量，默认 50，范围 10–200
-// - coverLongEdge      封面长边(px)，默认 400，范围 64–2048
 // - scoreRecentWeight  评分权重(0–100%)，默认 60，范围 0–100（存整数百分比，应用侧转 double）
 // 纪律：
 // - 文件缺失 → 全默认值（首次启动）；解析失败 → 置 error 返回 false（调用方回退默认值，不阻塞启动）；
@@ -32,14 +31,10 @@ public:
     int pageSize() const { return m_pageSize; }
     void setPageSize(int v) { m_pageSize = qBound(10, v, 200); }
 
-    int coverLongEdge() const { return m_coverLongEdge; }
-    void setCoverLongEdge(int v) { m_coverLongEdge = qBound(64, v, 2048); }
-
     int scoreRecentWeight() const { return m_scoreRecentWeight; }
     void setScoreRecentWeight(int v) { m_scoreRecentWeight = qBound(0, v, 100); }
 
 private:
     int m_pageSize = 50;             // 每页数量
-    int m_coverLongEdge = 400;       // 封面长边(px)
     int m_scoreRecentWeight = 60;    // 评分权重(%)，0–100
 };

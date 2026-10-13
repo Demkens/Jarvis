@@ -47,12 +47,11 @@ bool Application::initialize(const QString &libraryOverride)
     AppError settingsError;
     if (!m_settings->load(SettingsService::defaultPath(m_paths.get()), &settingsError))
         qWarning().noquote() << "[settings] 加载失败，使用默认值:" << settingsError.message;
-    m_storage->setCoverLongEdge(m_settings->coverLongEdge());
     m_packages->setScoreRecentWeight(m_settings->scoreRecentWeight() / 100.0);
 
     m_typeEngine = std::make_unique<TypeEngine>(m_paths.get(), m_library.get(),
                                                 m_typePackages.get(), m_creators.get(),
-                                                m_packages.get(), m_storage.get(),
+                                                m_packages.get(),
                                                 m_eventBus.get(), m_settings.get(), this);
     return true;
 }

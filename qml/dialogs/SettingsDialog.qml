@@ -1,4 +1,4 @@
-// 全局设置对话框（M5）：每页数量 / 封面长边 / 评分权重 / 主题（二期占位）。
+// 全局设置对话框（M5）：每页数量 / 评分权重 / 主题（二期占位）。
 // 打开时从核心读当前值（typeEngine.settings），保存时写回
 // （typeEngine.saveSettings → envs/settings.json 原子写 + 立即应用到各服务）。
 // 对话框不感知"设置如何生效"，只负责取值/提交；成功与否经 onAccepted 由调用方提示。
@@ -15,7 +15,7 @@ Dialog {
     x: (Overlay.overlay.width - width) / 2
     y: (Overlay.overlay.height - height) / 2
     width: 440
-    height: 340
+    height: 298
     standardButtons: Dialog.NoButton
     padding: 0
 
@@ -33,7 +33,6 @@ Dialog {
     onOpened: {
         const s = typeEngine.settings()
         pageSpin.value = s.pageSize
-        coverSpin.value = s.coverLongEdge
         weightSpin.value = s.scoreRecentWeight
         errText = ""
     }
@@ -54,22 +53,6 @@ Dialog {
             SpinBox {
                 id: pageSpin
                 from: 10; to: 200; stepSize: 10
-                editable: true
-                Layout.preferredWidth: 130
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
-            Label {
-                text: "封面长边 (px)"
-                Layout.fillWidth: true
-                font.pixelSize: 14
-            }
-            SpinBox {
-                id: coverSpin
-                from: 64; to: 2048; stepSize: 32
                 editable: true
                 Layout.preferredWidth: 130
             }
@@ -150,12 +133,10 @@ Dialog {
                 onClicked: {
                     // editable SpinBox 编辑中先失焦提交文本，再读取 value（否则可能读到旧值）
                     pageSpin.focus = false
-                    coverSpin.focus = false
                     weightSpin.focus = false
 
                     const result = typeEngine.saveSettings({
                         pageSize: pageSpin.value,
-                        coverLongEdge: coverSpin.value,
                         scoreRecentWeight: weightSpin.value
                     })
                     if (!result.ok) {

@@ -49,9 +49,7 @@ public:
     static QString packageDir(const QString &linkAddress, int bucket, qint64 id);
     static QString coverPath(const QString &coverRoot, int bucket, qint64 id);
 
-    // ---- 封面（开发文档 5.3：核心统一生成 JPEG，长边默认 400px 可调）----
-    int coverLongEdge() const { return m_coverLongEdge; }
-    void setCoverLongEdge(int px) { m_coverLongEdge = qBound(64, px, 2048); }
+    // ---- 封面（开发文档 5.3：核心统一生成 JPEG，清晰度固定为对角线 512px，不对外可调）----
 
     // 导入执行器（开发文档 5.4 ⑥）：
     // 校验 → 开事务 → 解析创作者 → 插入占位行取 id → 复制入桶 → 生成封面
@@ -78,5 +76,4 @@ private:
     LibraryService *m_library;
     CreatorService *m_creators;
     EventBus *m_events;
-    int m_coverLongEdge = 400;
 };

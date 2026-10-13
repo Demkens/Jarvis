@@ -1,4 +1,4 @@
-// 左栏导航栏：资源显示 + 数据统计 + 短笔记。
+// 左侧导航栏：资源显示 + 数据统计 + 短笔记。
 import QtQuick
 import QtQuick.Layouts
 
@@ -39,7 +39,6 @@ Rectangle {
             onClicked: leftBar.pageSelected(2)
         }
 
-        // 占位：填充左栏下半部分，使导航项位于上半部分
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
