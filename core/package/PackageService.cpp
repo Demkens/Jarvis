@@ -354,30 +354,3 @@ bool PackageService::deletePackage(qint64 id, AppError *error)
     qInfo().noquote() << "[package] 已删除包: id =" << id << "桶 =" << bucket;
     return true;
 }
-
-bool PackageService::regenerateCover(qint64 id, AppError *error)
-{
-    QString libraryName;
-    QString linkAddress;
-    if (!requireCurrentLibrary(&libraryName, &linkAddress, error))
-        return false;
-
-    AppError local;
-    DbAccess &db = m_library->dbAccess();
-    QVariantMap row;
-    const bool found = db.selectOne(QStringLiteral("SELECT storage_path FROM file WHERE id = :id"),
-                                    {{QStringLiteral("id"), id}}, row, &local);
-    if (failed(local, error))
-        return false;
-    if (!found) {
-        setOut(error, AppError::Validation, QStringLiteral("数据包不存在：#%1").arg(id));
-        return false;
-    }
-    const int bucket = row.value(QStringLiteral("storage_path")).toInt();
-
-    if (!m_storage->regenerateCover(linkAddress, bucket, id, error))
-        return false;
-
-    emit m_events->packageUpdated(id);
-    return true;
-}

@@ -335,40 +335,6 @@ bool StorageService::isLinkOnline() const
     return QDir(m_library->config().entry(name).linkAddress).exists();
 }
 
-bool StorageService::regenerateCover(const QString &linkAddress, int bucket, qint64 id,
-                                     AppError *error)
-{
-    auto fail = [&](AppError::Code code, const QString &message) -> bool {
-        if (error != nullptr)
-            *error = AppError::fail(code, message);
-        return false;
-    };
-
-    const QString sourceDir = packageDir(linkAddress, bucket, id);
-    if (!QDir(sourceDir).exists())
-        return fail(AppError::Io, QStringLiteral("包目录缺失：%1").arg(sourceDir));
-
-    // 取包内第一个图片文件为封面源（与导入默认行为一致）
-    const QStringList images = QDir(sourceDir).entryList(
-        {QStringLiteral("*.jpg"), QStringLiteral("*.jpeg"), QStringLiteral("*.png"),
-         QStringLiteral("*.gif"), QStringLiteral("*.bmp"), QStringLiteral("*.webp")},
-        QDir::Files | QDir::Readable, QDir::Name);
-    if (images.isEmpty())
-        return fail(AppError::Io,
-                    QStringLiteral("包内无图片文件，无法生成封面：%1").arg(sourceDir));
-
-    const QString libraryName = m_library->currentName();
-    if (libraryName.isEmpty())
-        return fail(AppError::Validation, QStringLiteral("没有打开的库"));
-
-    const QString targetCover = coverPath(m_paths->coverDir(libraryName), bucket, id);
-    if (!generateCover(sourceDir + QLatin1Char('/') + images.first(), targetCover, error))
-        return false;
-
-    qInfo().noquote() << "[storage] 已重新生成封面: id =" << id << "桶 =" << bucket;
-    return true;
-}
-
 int StorageService::exportPackage(qint64 id, const QString &destDir, AppError *error)
 {
     auto fail = [&](AppError::Code code, const QString &message) -> int {

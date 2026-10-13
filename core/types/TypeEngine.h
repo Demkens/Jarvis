@@ -84,11 +84,10 @@ public:
     // （评分权重立即生效；每页数量下次查询即用）。返回 {ok, message?}。
     Q_INVOKABLE QVariantMap saveSettings(const QVariantMap &values);
 
-    // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 删除 / 重生成封面
+    // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 删除
     Q_INVOKABLE QVariantMap updateTitle(qint64 fileId, const QString &title);
     Q_INVOKABLE QVariantMap ratePackage(qint64 fileId, int score);
     Q_INVOKABLE QVariantMap deletePackage(qint64 fileId);
-    Q_INVOKABLE QVariantMap regenerateCover(qint64 fileId);
 
     // 包实体目录绝对路径（"打开实体位置"用）；离线/库未开/包不存在返回空串
     Q_INVOKABLE QString packageDir(qint64 fileId);

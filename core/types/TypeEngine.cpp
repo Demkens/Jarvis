@@ -213,14 +213,6 @@ QVariantMap TypeEngine::deletePackage(qint64 fileId)
     return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
 }
 
-QVariantMap TypeEngine::regenerateCover(qint64 fileId)
-{
-    AppError error;
-    if (m_packageService->regenerateCover(fileId, &error))
-        return {{QStringLiteral("ok"), true}};
-    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
-}
-
 QString TypeEngine::packageDir(qint64 fileId)
 {
     if (!m_library->isOpen())

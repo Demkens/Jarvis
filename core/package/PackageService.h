@@ -56,9 +56,6 @@ public:
     // ---- 删除（开发文档 6.10）----
     bool deletePackage(qint64 id, AppError *error = nullptr);
 
-    // 重新生成封面（M4 右键）：查桶号 → StorageService::regenerateCover；成功后广播 PackageUpdated
-    bool regenerateCover(qint64 id, AppError *error = nullptr);
-
 private:
     // 当前库上下文；无打开库时返回 false
     bool requireCurrentLibrary(QString *libraryName, QString *linkAddress,

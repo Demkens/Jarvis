@@ -2,10 +2,10 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// M4 资源显示页（开发文档 8.2）：网格/列表视图、标题搜索、类型筛选、分页、
+// M4 资源显示页（开发文档 8.2）：网格视图、标题搜索、类型筛选、分页、
 // 单击预览面板（改标题/创作者/评分）、双击进查看器、右键操作、空态引导。
 // 数据源全部经 TypeEngine 门面（queryPackages / readFields / writeFields /
-// updateTitle / ratePackage / deletePackage / regenerateCover / packageDir）。
+// updateTitle / ratePackage / deletePackage / packageDir）。
 Item {
     id: page
 
@@ -22,10 +22,6 @@ Item {
     property int pageCount: 1
     property int currentPage: 1
     property string currentForm: ""
-    property bool gridMode: true
-    // 封面缓存破坏戳：封面文件可能被重新生成（设置长边/右键重生成），
-    // 给 coverUrl 追加 ?v=N 让 QML Image 因 URL 变化强制重新加载（toLocalFile 会忽略 query，加载不受影响）
-    property int coverStamp: 0
 
     // 预览面板状态
     property int previewId: 0
@@ -83,14 +79,8 @@ Item {
             page.showToast("查询失败：" + (result.message || "未知错误"))
             return
         }
-        page.coverStamp += 1
-        // 深拷贝为纯 JS 数组（核心返回对象不宜原地改），给每项 coverUrl 加版本戳强制封面重载
-        var items = JSON.parse(JSON.stringify(result.items))
-        for (var i = 0; i < items.length; ++i) {
-            if (items[i].coverUrl)
-                items[i].coverUrl = String(items[i].coverUrl) + "?v=" + page.coverStamp
-        }
-        page.viewItems = items
+        // 深拷贝为纯 JS 数组（核心返回对象不宜原地改）
+        page.viewItems = JSON.parse(JSON.stringify(result.items))
         page.totalCount = result.total
         page.pageCount = Math.max(1, result.pages)
         // 翻页越界保护：当前页超出新页数则回退到末页重查
@@ -99,13 +89,9 @@ Item {
             page.reload()
             return
         }
-        // 刷新预览面板（若预览的包仍存在；封面同加版本戳）
-        if (page.previewId > 0) {
-            var detail = JSON.parse(JSON.stringify(typeEngine.readFields(page.previewId)))
-            if (detail && detail.coverUrl)
-                detail.coverUrl = String(detail.coverUrl) + "?v=" + page.coverStamp
-            page.previewDetail = detail
-        }
+        // 刷新预览面板（若预览的包仍存在）
+        if (page.previewId > 0)
+            page.previewDetail = JSON.parse(JSON.stringify(typeEngine.readFields(page.previewId)))
     }
 
     function selectItem(modelData) {
@@ -191,40 +177,6 @@ Item {
                         page.reload()
                     }
                 }
-
-                // 视图切换（网格 / 列表）——自定义按钮避免原生样式限制
-                Rectangle {
-                    Layout.preferredWidth: 68
-                    Layout.preferredHeight: 34
-                    radius: 4
-                    color: page.gridMode ? "#3d6ecd" : "#e6eaf2"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "网格"
-                        color: page.gridMode ? "#ffffff" : "#2b2b2b"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: page.gridMode = true
-                    }
-                }
-                Rectangle {
-                    Layout.preferredWidth: 68
-                    Layout.preferredHeight: 34
-                    radius: 4
-                    color: !page.gridMode ? "#3d6ecd" : "#e6eaf2"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "列表"
-                        color: !page.gridMode ? "#ffffff" : "#2b2b2b"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: page.gridMode = false
-                    }
-                }
             }
 
             // ---- 操作结果提示 ----
@@ -254,34 +206,18 @@ Item {
                 }
             }
 
-            // ---- 内容视图（网格 / 列表）----
-            Item {
+            // ---- 内容视图（网格）----
+            GridView {
+                id: gridView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 visible: page.totalCount > 0
+                model: page.viewItems
+                cellWidth: 210
+                cellHeight: 250
                 clip: true
-
-                GridView {
-                    id: gridView
-                    anchors.fill: parent
-                    visible: page.gridMode
-                    model: page.viewItems
-                    cellWidth: 210
-                    cellHeight: 250
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
-                    delegate: cardDelegate
-                }
-
-                ListView {
-                    id: listView
-                    anchors.fill: parent
-                    visible: !page.gridMode
-                    model: page.viewItems
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
-                    delegate: listDelegate
-                }
+                boundsBehavior: Flickable.StopAtBounds
+                delegate: cardDelegate
             }
 
             // ---- 分页器 ----
@@ -588,87 +524,6 @@ Item {
         }
     }
 
-    // ============ 列表行 ============
-    Component {
-        id: listDelegate
-        Rectangle {
-            width: parent ? parent.width : 0
-            height: 64
-            color: "#ffffff"
-            border.color: "#eef1f6"
-            clip: true
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                spacing: 12
-
-                Rectangle {
-                    Layout.preferredWidth: 84
-                    Layout.preferredHeight: 48
-                    radius: 4
-                    color: "#eef1f6"
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        fillMode: Image.PreserveAspectCrop
-                        source: modelData.coverUrl || ""
-                    }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Text {
-                        Layout.fillWidth: true
-                        text: modelData.title || "untitled"
-                        elide: Text.ElideRight
-                        color: "#2b2b2b"
-                        font.pixelSize: 13
-                        font.bold: true
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: (modelData.creatorName || "anonymous")
-                              + (modelData.creatorCount > 1 ? " 等 " + modelData.creatorCount + " 人" : "")
-                              + "  ·  " + (modelData.type_form || "")
-                        elide: Text.ElideRight
-                        color: "#888888"
-                        font.pixelSize: 11
-                    }
-                }
-                Text {
-                    Layout.preferredWidth: 70
-                    text: modelData.score > 0 ? "评分 " + modelData.score : "未评分"
-                    color: "#666666"
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignRight
-                }
-                Text {
-                    Layout.preferredWidth: 80
-                    text: page.formatBytes(modelData.size)
-                    color: "#666666"
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignRight
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                onClicked: function (mouse) {
-                    if (mouse.button === Qt.RightButton) {
-                        contextMenu.currentItem = modelData
-                        contextMenu.popup()
-                    } else {
-                        page.selectItem(modelData)
-                    }
-                }
-                onDoubleClicked: page.openItem(modelData)
-            }
-        }
-    }
-
     // ============ 右键操作菜单 ============
     Menu {
         id: contextMenu
@@ -679,20 +534,6 @@ Item {
             onTriggered: {
                 if (contextMenu.currentItem)
                     page.openDetail(Number(contextMenu.currentItem.id))
-            }
-        }
-        MenuItem {
-            text: "重新生成封面"
-            onTriggered: {
-                if (!contextMenu.currentItem)
-                    return
-                var r = typeEngine.regenerateCover(Number(contextMenu.currentItem.id))
-                if (r.ok) {
-                    page.showToast("封面已重新生成")
-                    page.reload() // 封面文件已变：重查并加版本戳，强制列表/预览显示新封面
-                } else {
-                    page.showToast("封面生成失败：" + (r.message || ""))
-                }
             }
         }
         MenuItem {
