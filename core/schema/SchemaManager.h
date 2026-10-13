@@ -15,7 +15,7 @@ class SchemaManager
 {
 public:
     // 当前内置核心表版本
-    static constexpr int kCoreSchemaVersion = 3;
+    static constexpr int kCoreSchemaVersion = 4;
 
     // 建库/打开库时调用：把核心表补齐到最新版本
     bool ensureCoreSchema(DbAccess &db, AppError *error = nullptr);

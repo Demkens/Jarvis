@@ -74,7 +74,7 @@ bool PackageService::requireCurrentLibrary(QString *libraryName, QString *linkAd
 QVariantList PackageService::listPackages(const QString &form, AppError *error) const
 {
     QString sql =
-        QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, "
+        QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, f.aspect_ratio, "
                        "f.created_time, f.updated_time, t.form AS type_form "
                        "FROM file f JOIN type t ON t.id = f.type_id");
     QVariantMap params;
@@ -143,7 +143,7 @@ QVariantList PackageService::queryPackages(const QString &form, const QString &k
     params.insert(QStringLiteral("limit"), qMax(0, limit));
     params.insert(QStringLiteral("offset"), qMax(0, offset));
     const QList<QVariantMap> rows = db.select(
-        QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, "
+        QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, f.aspect_ratio, "
                        "f.created_time, f.updated_time, t.form AS type_form "
                        "FROM file f JOIN type t ON t.id = f.type_id WHERE %1 "
                        "ORDER BY f.id LIMIT :limit OFFSET :offset").arg(where),

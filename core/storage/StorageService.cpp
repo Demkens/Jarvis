@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QImageReader>
 #include <QDebug>
 #include <cmath>
 
@@ -20,6 +21,16 @@ constexpr qint64 kPackagesPerBucket = 5000;
 // 封面清晰度上限（固定值）：图片对角线像素。数据类型多、封面尺寸多样，
 // 用「长边」无法统一描述清晰度，暂按对角线归一，超过则等比缩小（仅缩小不放大）。
 constexpr int kCoverDiagonal = 512;
+
+// 读图片文件头得到宽高比（w/h，只解析文件头、不解码全图）；不可读返回 0 表示未知
+qreal readAspectRatio(const QString &imagePath)
+{
+    QImageReader reader(imagePath);
+    const QSize size = reader.size();
+    if (!size.isValid() || size.height() <= 0)
+        return 0.0;
+    return static_cast<qreal>(size.width()) / static_cast<qreal>(size.height());
+}
 
 // 递归复制目录（导出保留子目录结构用）
 bool copyDirectoryRecursively(const QString &srcPath, const QString &destPath)
@@ -168,6 +179,9 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     const QString title = plan.title.trimmed().isEmpty() ? QStringLiteral("untitled")
                                                          : plan.title.trimmed();
 
+    // 封面长宽比（瀑布流布局用）：封面为等比缩放，其 AR 等于原图 AR；读文件头即可
+    const qreal coverAspect = readAspectRatio(coverSource);
+
     DbAccess &db = m_library->dbAccess();
 
     // 离线（移动盘/NAS 未挂载）时禁止导入（开发文档 4.5）
@@ -237,11 +251,12 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     const QString now = isoNowUtc();
     qint64 id = 0;
     if (!db.execute(QStringLiteral(
-                        "INSERT INTO file (title, type_id, score, size, storage_path, "
+                        "INSERT INTO file (title, type_id, score, size, storage_path, aspect_ratio, "
                         "created_time, updated_time) "
-                        "VALUES (:title, :type_id, 0, 0, 0, :now, :now)"),
+                        "VALUES (:title, :type_id, 0, 0, 0, :aspect, :now, :now)"),
                     {{QStringLiteral("title"), title},
                      {QStringLiteral("type_id"), typeId},
+                     {QStringLiteral("aspect"), coverAspect},
                      {QStringLiteral("now"), now}},
                     &id, error)) {
         db.rollback();
@@ -333,6 +348,52 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     qInfo().noquote() << "[storage] 已导入包: id =" << id << "桶 =" << bucket << "标题 ="
                       << title << "文件数 =" << plan.files.size() << "大小 =" << totalSize;
     return id;
+}
+
+int StorageService::backfillAspectRatios(AppError *error)
+{
+    const QString libraryName = m_library->currentName();
+    if (libraryName.isEmpty())
+        return 0;
+    DbAccess &db = m_library->dbAccess();
+
+    // 只处理 AR 未知（<=0）的行；封面缺失时以 1.0 兜底，避免每次打开重复扫描
+    AppError queryError;
+    const QList<QVariantMap> rows = db.select(
+        QStringLiteral("SELECT id, storage_path FROM file WHERE aspect_ratio <= 0"), {},
+        &queryError);
+    if (!queryError.ok()) {
+        if (error != nullptr)
+            *error = queryError;
+        return -1;
+    }
+    if (rows.isEmpty())
+        return 0;
+
+    const QString coverRoot = m_paths->coverDir(libraryName);
+    if (!db.transaction(error))
+        return -1;
+
+    int updated = 0;
+    for (const QVariantMap &row : rows) {
+        const qint64 id = row.value(QStringLiteral("id")).toLongLong();
+        const int bucket = row.value(QStringLiteral("storage_path")).toInt();
+        const QString coverAbs = coverPath(coverRoot, bucket, id);
+        qreal ar = QFileInfo::exists(coverAbs) ? readAspectRatio(coverAbs) : 0.0;
+        if (ar <= 0.0)
+            ar = 1.0; // 未知兜底为方形
+        if (!db.execute(QStringLiteral("UPDATE file SET aspect_ratio = :ar WHERE id = :id"),
+                        {{QStringLiteral("ar"), ar}, {QStringLiteral("id"), id}}, error)) {
+            db.rollback();
+            return -1;
+        }
+        ++updated;
+    }
+    if (!db.commit(error)) {
+        db.rollback();
+        return -1;
+    }
+    return updated;
 }
 
 bool StorageService::isLinkOnline() const

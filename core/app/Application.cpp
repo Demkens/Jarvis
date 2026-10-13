@@ -42,6 +42,12 @@ bool Application::initialize(const QString &libraryOverride)
     m_import = std::make_unique<ImportService>(m_library.get(), m_storage.get(),
                                                m_typePackages.get(), this);
 
+    // 补全存量行的封面长宽比（瀑布流布局用）：库打开/切换时各跑一次（无待补行时开销极小）
+    m_storage->backfillAspectRatios();
+    connect(m_library.get(), &LibraryService::openChanged, this, [this]() {
+        m_storage->backfillAspectRatios();
+    });
+
     // M5 全局设置：加载失败不阻塞启动（回退默认值，只记警告）；成功后立即应用到各服务
     m_settings = std::make_unique<SettingsService>();
     AppError settingsError;

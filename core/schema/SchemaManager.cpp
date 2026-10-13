@@ -85,6 +85,12 @@ const QStringList kCoreV3Statements = {
                    "WHERE NOT EXISTS (SELECT 1 FROM file_creator fc WHERE fc.file_id = f.id)"),
 };
 
+// 核心 v4：封面长宽比入库（瀑布流布局用，= 宽/高；0 视为未知）。
+// 封面由核心等比生成，其 AR 等于原图 AR；存量行在打开库时按封面文件头补全。
+const QStringList kCoreV4Statements = {
+    QStringLiteral("ALTER TABLE file ADD COLUMN aspect_ratio REAL NOT NULL DEFAULT 0"),
+};
+
 } // namespace
 
 bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
@@ -104,6 +110,8 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
             statements = &kCoreV2Statements;
         else if (version == 3)
             statements = &kCoreV3Statements;
+        else if (version == 4)
+            statements = &kCoreV4Statements;
 
         if (statements == nullptr)
             continue;

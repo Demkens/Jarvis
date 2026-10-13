@@ -20,16 +20,6 @@ Item {
     property int currentPage: 1
     property string currentForm: ""
 
-    function formatBytes(bytes) {
-        if (!bytes)
-            return "0 B"
-        if (bytes < 1024)
-            return bytes + " B"
-        if (bytes < 1024 * 1024)
-            return (bytes / 1024).toFixed(1) + " KB"
-        return (bytes / 1024 / 1024).toFixed(2) + " MB"
-    }
-
     // 重新查询当前页
     function reload() {
         if (!libraryService.currentName)
@@ -50,9 +40,61 @@ Item {
             page.reload()
             return
         }
+        layoutTimer.restart()
     }
 
     function openItem(modelData) { page.openViewer(Number(modelData.id)) }
+
+    // 瀑布流重排：按"当前最短列"投放，列宽随可用宽度自适应。
+    // 因封面 AR 已随资源入库，无需等图片加载即可定高 → 布局稳定、不跳变、不重叠。
+    function relayout() {
+        var items = page.viewItems
+        var n = items.length
+        if (n === 0) {
+            masonryHost.height = 0
+            return
+        }
+        var hostW = masonryHost.width
+        if (hostW <= 0)
+            return
+        var gap = 12
+        var targetColW = 200
+        var cols = Math.max(1, Math.floor((hostW + gap) / (targetColW + gap)))
+        var colW = (hostW - gap * (cols - 1)) / cols
+        var heights = []
+        for (var c = 0; c < cols; ++c)
+            heights.push(0)
+        for (var i = 0; i < n; ++i) {
+            var col = 0
+            for (var k = 1; k < cols; ++k)
+                if (heights[k] < heights[col])
+                    col = k
+            var ar = items[i].aspect_ratio
+            if (!ar || ar <= 0)
+                ar = 1.0
+            var h = Math.round(colW / ar)
+            var it = cardRepeater.itemAt(i)
+            if (it) {
+                it.cardWidth = colW
+                it.cardHeight = h
+                it.x = Math.round(col * (colW + gap))
+                it.y = Math.round(heights[col])
+            }
+            heights[col] += h + gap
+        }
+        var maxH = 0
+        for (var m = 0; m < cols; ++m)
+            if (heights[m] > maxH)
+                maxH = heights[m]
+        masonryHost.height = Math.max(0, maxH - gap)
+    }
+
+    // 合并同一帧内的多次重排请求（模型变化/宽度变化）
+    Timer {
+        id: layoutTimer
+        interval: 0
+        onTriggered: page.relayout()
+    }
 
     // 类型 ComboBox 模型：首位"全部类型" + 已启用类型（enabledTypes 变化自动重算）
     readonly property var typeFilterModel: [{"form": "", "displayName": "全部类型"}].concat(typeEngine.enabledTypes)
@@ -135,8 +177,9 @@ Item {
             }
         }
 
-        // 内容视图（网格）
-        GridView {
+        // 内容视图（瀑布流：常态仅封面；悬停放大 + 底部信息浮层）
+        Flickable {
+            id: masonry
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 16
@@ -144,12 +187,26 @@ Item {
             Layout.topMargin: 12
             Layout.bottomMargin: 12
             visible: page.totalCount > 0
-            model: page.viewItems
-            cellWidth: 210
-            cellHeight: 250
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            delegate: cardDelegate
+            contentWidth: width
+            contentHeight: masonryHost.height
+
+            Item {
+                id: masonryHost
+                width: masonry.width
+                height: 0
+
+                Repeater {
+                    id: cardRepeater
+                    model: page.viewItems
+                    delegate: cardDelegate
+                    onItemAdded: layoutTimer.restart()
+                    onCountChanged: layoutTimer.restart()
+                }
+            }
+
+            onWidthChanged: layoutTimer.restart()
         }
 
         // 分页器
@@ -244,58 +301,68 @@ Item {
         }
     }
 
-    // 网格卡片
+    // 瀑布流卡片：常态仅封面；悬停轻微放大 + 底部半透明浮层（仅标题/作者）
     Component {
         id: cardDelegate
         Rectangle {
-            width: 198
-            height: 240
+            property real cardWidth: 200
+            property real cardHeight: 200
+            width: cardWidth
+            height: cardHeight
             radius: 8
-            color: "#ffffff"
-            border.color: "#e0e4ec"
+            color: "#eef1f6"
             clip: true
 
-            Column {
+            // 容器比例 = 图片比例（AR 已入库）→ 完整显示且无留白
+            Image {
                 anchors.fill: parent
-                anchors.margins: 8
-                spacing: 6
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                smooth: true
+                source: modelData.coverUrl || ""
+            }
 
-                Rectangle {
-                    width: parent.width
-                    height: 150
-                    radius: 5
-                    color: "#eef1f6"
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        fillMode: Image.PreserveAspectCrop
-                        source: modelData.coverUrl || ""
+            // 悬停：轻微放大并提升层级，避免被相邻卡片压住
+            HoverHandler {
+                id: cardHover
+            }
+            scale: cardHover.hovered ? 1.04 : 1.0
+            z: cardHover.hovered ? 2 : 0
+            Behavior on scale {
+                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+            }
+
+            // 底部半透明浮层：仅「标题」「作者」
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Math.min(parent.height, 46)
+                color: "#a6000000"
+                opacity: cardHover.hovered ? 1 : 0
+                Behavior on opacity {
+                    NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                }
+
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    spacing: 2
+                    Text {
+                        width: parent.width
+                        text: modelData.title || "untitled"
+                        color: "#ffffff"
+                        font.pixelSize: 12
+                        font.bold: true
+                        elide: Text.ElideRight
                     }
-                }
-
-                Text {
-                    width: parent.width
-                    text: modelData.title || "untitled"
-                    elide: Text.ElideRight
-                    color: "#2b2b2b"
-                    font.pixelSize: 13
-                    font.bold: true
-                }
-                Text {
-                    width: parent.width
-                    text: (modelData.creatorName || "佚名")
-                          + (modelData.creatorCount > 1 ? " 等 " + modelData.creatorCount + " 人" : "")
-                          + "  ·  " + (modelData.type_form || "")
-                    elide: Text.ElideRight
-                    color: "#888888"
-                    font.pixelSize: 11
-                }
-                Text {
-                    width: parent.width
-                    text: modelData.score > 0 ? "评分 " + modelData.score
-                                             : page.formatBytes(modelData.size)
-                    color: "#666666"
-                    font.pixelSize: 11
+                    Text {
+                        width: parent.width
+                        text: modelData.creatorName || "佚名"
+                        color: "#d5dbe6"
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
+                    }
                 }
             }
 

@@ -64,6 +64,10 @@ public:
     // 当前库的实际库是否在线（链接库根目录可达；离线时禁止导入/导出）
     bool isLinkOnline() const;
 
+    // 补全存量行的封面长宽比（瀑布流布局用）：对 aspect_ratio<=0 的行按封面文件头回写 AR，
+    // 封面缺失兜底 1.0。返回更新行数，-1 表示出错。打开库后调用一次即可（无待补行时开销极小）。
+    int backfillAspectRatios(AppError *error = nullptr);
+
 private:
     bool generateCover(const QString &sourcePath, const QString &targetPath, AppError *error);
 
