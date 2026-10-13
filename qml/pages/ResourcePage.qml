@@ -1,45 +1,24 @@
+// 资源显示页
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// M4 资源显示页（开发文档 8.2）：网格视图、标题搜索、类型筛选、分页、
-// 单击预览面板（改标题/创作者/评分）、双击进查看器、右键操作、空态引导。
-// 数据源全部经 TypeEngine 门面（queryPackages / readFields / writeFields /
-// updateTitle / ratePackage / deletePackage / packageDir）。
 Item {
     id: page
 
-    // 与 Main.qml 的协作信号
+    // 信号: 与 Main.qml 的协作信号
     signal openViewer(int packageId)
     signal exportPackage(int packageId)
     // 打开详情窗口：DetailWindow 提升到 Main.qml 顶层（Window 不能挂在深层 Item 下，
     // 否则弹窗不可见——见 M4 右键"打开详情"无反应问题），此处只转发 id。
     signal openDetail(int packageId)
 
-    // ---- 查询状态（JS 数组整体替换以触发模型刷新，避免 Qt 对原地 push 无通知的坑）----
+    // 查询状态（JS 数组整体替换以触发模型刷新，避免 Qt 对原地 push 无通知的坑）
     property var viewItems: []
     property int totalCount: 0
     property int pageCount: 1
     property int currentPage: 1
     property string currentForm: ""
-
-    // 预览面板状态
-    property int previewId: 0
-    property var previewDetail: ({})
-
-    // 操作结果提示（右上角短暂显示）
-    property string toastText: ""
-
-    Timer {
-        id: toastTimer
-        interval: 3500
-        onTriggered: page.toastText = ""
-    }
-
-    function showToast(text) {
-        page.toastText = text
-        toastTimer.restart()
-    }
 
     function formatBytes(bytes) {
         if (!bytes)
@@ -51,32 +30,13 @@ Item {
         return (bytes / 1024 / 1024).toFixed(2) + " MB"
     }
 
-    function formatTime(iso) {
-        if (!iso)
-            return "—"
-        var s = String(iso)
-        return s.length >= 10 ? s.slice(0, 10) + " " + s.slice(11, 16) : s
-    }
-
-    // 类型 form → 显示名（enabledTypes 里有 displayName；找不到回退 form）
-    function formDisplayName(form) {
-        if (!form)
-            return "—"
-        var list = typeEngine.enabledTypes
-        for (var i = 0; i < list.length; ++i) {
-            if (list[i].form === form)
-                return list[i].displayName
-        }
-        return form
-    }
-
     // 重新查询当前页（搜索/筛选/翻页/包事件/设置保存后调用）
     function reload() {
         if (!libraryService.currentName)
             return
         var result = typeEngine.queryPackages(page.currentForm, searchField.text, page.currentPage)
         if (!result.ok) {
-            page.showToast("查询失败：" + (result.message || "未知错误"))
+            console.warn("[resource] 查询失败：" + (result.message || "未知错误"))
             return
         }
         // 深拷贝为纯 JS 数组（核心返回对象不宜原地改）
@@ -89,24 +49,6 @@ Item {
             page.reload()
             return
         }
-        // 刷新预览面板（若预览的包仍存在）
-        if (page.previewId > 0)
-            page.previewDetail = JSON.parse(JSON.stringify(typeEngine.readFields(page.previewId)))
-    }
-
-    function selectItem(modelData) {
-        // 切换预览对象前先提交未保存的编辑（onEditingFinished 只在回车/失焦触发，
-        // 直接点其他卡片时不会触发，导致"改了没保存"）
-        if (page.previewId > 0) {
-            if (titleField.text !== (page.previewDetail.title || ""))
-                typeEngine.updateTitle(page.previewId, titleField.text)
-            var joined = (page.previewDetail.creators || []).join("、")
-            if (creatorField.text !== joined)
-                typeEngine.writeCreators(page.previewId, creatorField.text)
-        }
-        var id = Number(modelData.id)
-        page.previewId = id
-        page.previewDetail = typeEngine.readFields(id)
     }
 
     function openItem(modelData) {
@@ -131,322 +73,163 @@ Item {
         }
     }
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        // ============ 主内容区 ============
-        ColumnLayout {
+        // ---- 顶行：搜索 / 类型筛选 ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.topMargin: 10
+            spacing: 8
+
+            TextField {
+                id: searchField
+                Layout.fillWidth: true
+                placeholderText: "按标题搜索…"
+                selectByMouse: true
+                // 防抖：停止输入 300ms 后查询，回到第一页
+                Timer {
+                    id: searchTimer
+                    interval: 300
+                    onTriggered: {
+                        page.currentPage = 1
+                        page.reload()
+                    }
+                }
+                onTextChanged: searchTimer.restart()
+            }
+
+            ComboBox {
+                id: typeCombo
+                Layout.preferredWidth: 150
+                model: page.typeFilterModel
+                textRole: "displayName"
+                onActivated: {
+                    page.currentForm = currentValue.form
+                    page.currentPage = 1
+                    page.reload()
+                }
+            }
+        }
+
+        // ---- 空态（有库但无数据）----
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            visible: page.totalCount === 0 && libraryService.currentName !== ""
+            color: "transparent"
+            Text {
+                anchors.centerIn: parent
+                text: "库无文件，待导入"
+                color: "#888888"
+                font.pixelSize: 16
+            }
+        }
 
-            // ---- 顶行：搜索 / 类型筛选 / 视图切换 ----
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.topMargin: 10
-                spacing: 8
+        // ---- 内容视图（网格）----
+        GridView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: page.totalCount > 0
+            model: page.viewItems
+            cellWidth: 210
+            cellHeight: 250
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            delegate: cardDelegate
+        }
 
-                TextField {
-                    id: searchField
-                    Layout.fillWidth: true
-                    placeholderText: "按标题搜索…"
-                    selectByMouse: true
-                    // 防抖：停止输入 300ms 后查询，回到第一页
-                    Timer {
-                        id: searchTimer
-                        interval: 300
-                        onTriggered: {
-                            page.currentPage = 1
-                            page.reload()
-                        }
-                    }
-                    onTextChanged: searchTimer.restart()
+        // ---- 分页器 ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.bottomMargin: 8
+            Layout.topMargin: 6
+            visible: page.totalCount > 0
+            spacing: 6
+
+            Text {
+                text: "共 " + page.totalCount + " 条"
+                color: "#666666"
+                font.pixelSize: 12
+            }
+            Item { Layout.fillWidth: true }
+
+            Rectangle {
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 28
+                radius: 4
+                color: page.currentPage > 1 ? "#e6eaf2" : "#f0f0f0"
+                Text {
+                    anchors.centerIn: parent
+                    text: "上一页"
+                    color: page.currentPage > 1 ? "#2b2b2b" : "#aaaaaa"
+                    font.pixelSize: 12
                 }
-
-                ComboBox {
-                    id: typeCombo
-                    Layout.preferredWidth: 150
-                    model: page.typeFilterModel
-                    textRole: "displayName"
-                    onActivated: {
-                        page.currentForm = currentValue.form
-                        page.currentPage = 1
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: page.currentPage > 1
+                    onClicked: {
+                        page.currentPage -= 1
                         page.reload()
                     }
                 }
             }
 
-            // ---- 操作结果提示 ----
-            Text {
-                Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.topMargin: 4
-                visible: page.toastText !== ""
-                text: page.toastText
-                color: "#c0392b"
-                font.pixelSize: 12
-                wrapMode: Text.WrapAnywhere
-            }
-
-            // ---- 空态（有库但无数据）----
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: page.totalCount === 0 && libraryService.currentName !== ""
-                color: "transparent"
-                Text {
-                    anchors.centerIn: parent
-                    text: "库无文件，待导入"
-                    color: "#888888"
-                    font.pixelSize: 16
-                }
-            }
-
-            // ---- 内容视图（网格）----
-            GridView {
-                id: gridView
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: page.totalCount > 0
-                model: page.viewItems
-                cellWidth: 210
-                cellHeight: 250
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                delegate: cardDelegate
-            }
-
-            // ---- 分页器 ----
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.bottomMargin: 8
-                Layout.topMargin: 6
-                visible: page.totalCount > 0
-                spacing: 6
-
-                Text {
-                    text: "共 " + page.totalCount + " 条"
-                    color: "#666666"
-                    font.pixelSize: 12
-                }
-                Item { Layout.fillWidth: true }
-
-                Rectangle {
-                    Layout.preferredWidth: 64
-                    Layout.preferredHeight: 28
-                    radius: 4
-                    color: page.currentPage > 1 ? "#e6eaf2" : "#f0f0f0"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "上一页"
-                        color: page.currentPage > 1 ? "#2b2b2b" : "#aaaaaa"
-                        font.pixelSize: 12
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: page.currentPage > 1
-                        onClicked: {
-                            page.currentPage -= 1
-                            page.reload()
-                        }
-                    }
-                }
-
-                // 页码（窗口式：1 … 前/当前/后 … 末）
-                Row {
-                    id: pageRow
-                    Layout.preferredHeight: 28
-                    spacing: 4
-                    Repeater {
-                        model: page.pageNumbers()
-                        delegate: Rectangle {
-                            width: 28
-                            height: 28
-                            radius: 4
-                            color: modelData === page.currentPage ? "#3d6ecd" : "#e6eaf2"
-                            visible: modelData !== 0 // 0 表示省略号占位
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData === 0 ? "…" : modelData
-                                color: modelData === page.currentPage ? "#ffffff" : "#2b2b2b"
-                                font.pixelSize: 12
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (modelData !== page.currentPage) {
-                                        page.currentPage = modelData
-                                        page.reload()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    Layout.preferredWidth: 64
-                    Layout.preferredHeight: 28
-                    radius: 4
-                    color: page.currentPage < page.pageCount ? "#e6eaf2" : "#f0f0f0"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "下一页"
-                        color: page.currentPage < page.pageCount ? "#2b2b2b" : "#aaaaaa"
-                        font.pixelSize: 12
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: page.currentPage < page.pageCount
-                        onClicked: {
-                            page.currentPage += 1
-                            page.reload()
-                        }
-                    }
-                }
-            }
-        }
-
-        // ============ 预览面板（单击卡片时显示）============
-        Rectangle {
-            id: previewPanel
-            Layout.preferredWidth: 300
-            Layout.fillHeight: true
-            visible: page.previewId > 0
-            color: "#f7f8fb"
-            border.color: "#e0e4ec"
-
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 10
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        Layout.fillWidth: true
-                        text: "预览"
-                        color: "#2b2b2b"
-                        font.pixelSize: 15
-                        font.bold: true
-                    }
-                    Rectangle {
-                        Layout.preferredWidth: 60
-                        Layout.preferredHeight: 26
+            // 页码（窗口式：1 … 前/当前/后 … 末）
+            Row {
+                Layout.preferredHeight: 28
+                spacing: 4
+                Repeater {
+                    model: page.pageNumbers()
+                    delegate: Rectangle {
+                        width: 28
+                        height: 28
                         radius: 4
-                        color: "#e6eaf2"
+                        color: modelData === page.currentPage ? "#3d6ecd" : "#e6eaf2"
+                        visible: modelData !== 0 // 0 表示省略号占位
                         Text {
                             anchors.centerIn: parent
-                            text: "关闭"
-                            color: "#2b2b2b"
-                            font.pixelSize: 12
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: page.previewId = 0
-                        }
-                    }
-                }
-
-                Rectangle {
-                    Layout.preferredWidth: 200
-                    Layout.preferredHeight: 140
-                    Layout.alignment: Qt.AlignHCenter
-                    radius: 6
-                    color: "#eef1f6"
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        fillMode: Image.PreserveAspectCrop
-                        source: page.previewDetail.coverUrl || ""
-                    }
-                }
-
-                // 标题（可编辑，回车/失焦提交）
-                Text { text: "标题"; color: "#888888"; font.pixelSize: 11 }
-                TextField {
-                    id: titleField
-                    Layout.fillWidth: true
-                    text: page.previewDetail.title || ""
-                    selectByMouse: true
-                    onEditingFinished: {
-                        var r = typeEngine.updateTitle(page.previewId, text)
-                        if (!r.ok)
-                            page.showToast("标题修改失败：" + (r.message || ""))
-                        else
-                            page.showToast("标题已更新")
-                    }
-                }
-
-                // 创作者（多对多：逗号/顿号分隔，第一个为主要创作者；find-or-create 由核心处理）
-                Text { text: "创作者"; color: "#888888"; font.pixelSize: 11 }
-                TextField {
-                    id: creatorField
-                    Layout.fillWidth: true
-                    text: (page.previewDetail.creators || []).join("、")
-                    selectByMouse: true
-                    onEditingFinished: {
-                        var r = typeEngine.writeCreators(page.previewId, text)
-                        if (!r.ok)
-                            page.showToast("创作者修改失败：" + (r.message || ""))
-                        else
-                            page.showToast("创作者已更新")
-                    }
-                }
-
-                // 评分（0–100，0=未评分；二次评分 0.4/0.6 由核心计算）
-                Text { text: "评分"; color: "#888888"; font.pixelSize: 11 }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    SpinBox {
-                        id: scoreBox
-                        from: 0
-                        to: 100
-                        editable: true
-                        value: page.previewDetail.score || 0
-                    }
-                    Rectangle {
-                        Layout.preferredWidth: 64
-                        Layout.preferredHeight: 30
-                        radius: 4
-                        color: "#3d6ecd"
-                        Text {
-                            anchors.centerIn: parent
-                            text: "保存"
-                            color: "#ffffff"
+                            text: modelData === 0 ? "…" : modelData
+                            color: modelData === page.currentPage ? "#ffffff" : "#2b2b2b"
                             font.pixelSize: 12
                         }
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                // editable SpinBox 输入未回车时 value 未提交，
-                                // 先强制失焦提交，避免保存到旧值
-                                scoreBox.focus = false
-                                var r = typeEngine.ratePackage(page.previewId, scoreBox.value)
-                                if (!r.ok)
-                                    page.showToast("评分失败：" + (r.message || ""))
-                                else
-                                    page.showToast("评分已保存（加权 0.4/0.6）")
+                                if (modelData !== page.currentPage) {
+                                    page.currentPage = modelData
+                                    page.reload()
+                                }
                             }
                         }
                     }
                 }
+            }
 
-                // 只读信息
-                Text { text: "类型：" + page.formDisplayName(page.previewDetail.type_form); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "创作日期：" + (page.previewDetail.creation_date || "—"); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "大小：" + page.formatBytes(page.previewDetail.size); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "入库：" + page.formatTime(page.previewDetail.created_time); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "更新：" + page.formatTime(page.previewDetail.updated_time); color: "#444444"; font.pixelSize: 12 }
-
-                Item { Layout.fillHeight: true }
+            Rectangle {
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 28
+                radius: 4
+                color: page.currentPage < page.pageCount ? "#e6eaf2" : "#f0f0f0"
+                Text {
+                    anchors.centerIn: parent
+                    text: "下一页"
+                    color: page.currentPage < page.pageCount ? "#2b2b2b" : "#aaaaaa"
+                    font.pixelSize: 12
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: page.currentPage < page.pageCount
+                    onClicked: {
+                        page.currentPage += 1
+                        page.reload()
+                    }
+                }
             }
         }
     }
@@ -506,17 +289,14 @@ Item {
                 }
             }
 
-            // 三级交互：单击=预览，双击=查看器，右键=操作菜单
+            // 二级交互：双击=查看器，右键=操作菜单
             MouseArea {
-                id: cardMouse
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onClicked: function (mouse) {
                     if (mouse.button === Qt.RightButton) {
                         contextMenu.currentItem = modelData
                         contextMenu.popup()
-                    } else {
-                        page.selectItem(modelData)
                     }
                 }
                 onDoubleClicked: page.openItem(modelData)
@@ -550,7 +330,7 @@ Item {
                 if (dir)
                     Qt.openUrlExternally("file:///" + encodeURIComponent(dir).replace(/%2F/gi, "/"))
                 else
-                    page.showToast("实体目录不可达（库离线？）")
+                    console.warn("[resource] 实体目录不可达（库离线？）")
             }
         }
         MenuItem {
@@ -623,9 +403,10 @@ Item {
                         anchors.fill: parent
                         onClicked: {
                             var r = typeEngine.deletePackage(deleteConfirm.confirmId)
-                            page.showToast(r.ok ? "已删除" : "删除失败：" + (r.message || ""))
-                            if (page.previewId === deleteConfirm.confirmId)
-                                page.previewId = 0
+                            if (r.ok)
+                                console.log("[resource] 已删除 #" + deleteConfirm.confirmId)
+                            else
+                                console.warn("[resource] 删除失败：" + (r.message || ""))
                             deleteConfirm.close()
                         }
                     }
