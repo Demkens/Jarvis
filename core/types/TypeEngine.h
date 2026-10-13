@@ -93,6 +93,11 @@ public:
     // 包实体目录绝对路径（"打开实体位置"用）；离线/库未开/包不存在返回空串
     Q_INVOKABLE QString packageDir(qint64 fileId);
 
+    // 包内首个文件（001.ext）的本地 URL（"用系统默认程序打开"用）。
+    // 包目录仅含本包文件且按零填充序号命名，系统查看器据此可在同目录内翻页；
+    // 离线/库未开/包不存在/无文件返回空 URL。
+    Q_INVOKABLE QUrl firstFileUrl(qint64 fileId);
+
 signals:
     void enabledTypesChanged();
     void packagesChanged();

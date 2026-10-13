@@ -411,6 +411,23 @@ Item {
             }
         }
         MenuItem {
+            text: "用系统方式打开"
+            enabled: {
+                if (!contextMenu.currentItem)
+                    return false
+                return typeEngine.firstFileUrl(Number(contextMenu.currentItem.id)).toString() !== ""
+            }
+            onTriggered: {
+                if (!contextMenu.currentItem)
+                    return
+                var u = typeEngine.firstFileUrl(Number(contextMenu.currentItem.id))
+                if (u.toString() !== "")
+                    Qt.openUrlExternally(u)
+                else
+                    console.warn("[resource] 无文件可打开（库离线或包为空？）")
+            }
+        }
+        MenuItem {
             text: "导出到文件夹"
             onTriggered: {
                 if (contextMenu.currentItem)

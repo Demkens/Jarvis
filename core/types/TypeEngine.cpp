@@ -1,5 +1,6 @@
 #include "types/TypeEngine.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QHash>
 #include <QQmlEngine>
@@ -228,6 +229,20 @@ QString TypeEngine::packageDir(qint64 fileId)
     const int bucket = detail.value(QStringLiteral("storage_path")).toInt();
     const QString linkAddress = m_library->config().entry(libraryName).linkAddress;
     return StorageService::packageDir(linkAddress, bucket, fileId);
+}
+
+QUrl TypeEngine::firstFileUrl(qint64 fileId)
+{
+    const QString dirPath = packageDir(fileId);
+    if (dirPath.isEmpty())
+        return QUrl();
+
+    // 按文件名升序取第一个（零填充序号保证 001→002…，即包内首帧）
+    const QDir dir(dirPath);
+    const QFileInfoList entries = dir.entryInfoList(QDir::Files, QDir::Name);
+    if (entries.isEmpty())
+        return QUrl();
+    return QUrl::fromLocalFile(entries.first().absoluteFilePath());
 }
 
 QVariantMap TypeEngine::readFields(qint64 fileId) const
