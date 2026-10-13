@@ -214,7 +214,7 @@ Dialog {
                                         Label { text: "画家"; font.pixelSize: 12; color: "#aab3c5" }
                                         TextField {
                                             text: dialog.scanPlans[index].creatorName
-                                            placeholderText: "anonymous"
+                                            placeholderText: "佚名"
                                             placeholderTextColor: "#5c6472"
                                             font.pixelSize: 13
                                             color: "#e6eaf2"

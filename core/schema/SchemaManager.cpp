@@ -70,6 +70,21 @@ const QStringList kCoreV2Statements = {
     QStringLiteral("CREATE INDEX IF NOT EXISTS idx_file_creator_creator ON file_creator(creator_id)"),
 };
 
+// 核心 v3：无创作者统一为「佚名」——保证该创作者存在，并为存量"无关联行"的文件补上关联，
+// 使「佚名」可被检索，且显示/搜索语义一致（开发文档 6.6 的 anonymous 语义落地为可检索实体）。
+const QStringList kCoreV3Statements = {
+    // 1) 若无同名「佚名」，把预置 id=0 的 anonymous 更名为「佚名」（保持 id 稳定）
+    QStringLiteral("UPDATE creator SET name = '佚名' "
+                   "WHERE id = 0 AND name = 'anonymous' "
+                   "AND NOT EXISTS (SELECT 1 FROM creator WHERE name = '佚名')"),
+    // 2) 兜底：确保「佚名」存在（id=0 已被占用或缺失的情形）
+    QStringLiteral("INSERT OR IGNORE INTO creator (name, kind) VALUES ('佚名', 1)"),
+    // 3) 为存量无创作者文件补「佚名」关联（sort_order=0 即主要创作者）
+    QStringLiteral("INSERT INTO file_creator (file_id, creator_id, sort_order) "
+                   "SELECT f.id, (SELECT id FROM creator WHERE name = '佚名'), 0 FROM file f "
+                   "WHERE NOT EXISTS (SELECT 1 FROM file_creator fc WHERE fc.file_id = f.id)"),
+};
+
 } // namespace
 
 bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
@@ -87,6 +102,8 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
             statements = &kCoreV1Statements;
         else if (version == 2)
             statements = &kCoreV2Statements;
+        else if (version == 3)
+            statements = &kCoreV3Statements;
 
         if (statements == nullptr)
             continue;

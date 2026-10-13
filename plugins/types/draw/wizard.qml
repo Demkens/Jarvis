@@ -74,7 +74,7 @@ Item {
             TextField {
                 id: creatorField
                 Layout.preferredWidth: 180
-                placeholderText: "多个用逗号/顿号分隔，留空为 anonymous"
+                placeholderText: "多个用逗号/顿号分隔，留空为 佚名"
                 font.pixelSize: 13
             }
             Label { text: "创作日期（批量）"; font.pixelSize: 13 }

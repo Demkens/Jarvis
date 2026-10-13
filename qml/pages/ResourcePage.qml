@@ -30,11 +30,12 @@ Item {
         return (bytes / 1024 / 1024).toFixed(2) + " MB"
     }
 
-    // 重新查询当前页（搜索/筛选/翻页/包事件/设置保存后调用）
+    // 重新查询当前页
     function reload() {
         if (!libraryService.currentName)
             return
-        var result = typeEngine.queryPackages(page.currentForm, searchField.text, page.currentPage)
+        var result = typeEngine.queryPackages(page.currentForm, searchField.text,
+                                              scopeCombo.currentIndex, page.currentPage)
         if (!result.ok) {
             console.warn("[resource] 查询失败：" + (result.message || "未知错误"))
             return
@@ -51,39 +52,44 @@ Item {
         }
     }
 
-    function openItem(modelData) {
-        page.openViewer(Number(modelData.id))
-    }
+    function openItem(modelData) { page.openViewer(Number(modelData.id)) }
 
     // 类型 ComboBox 模型：首位"全部类型" + 已启用类型（enabledTypes 变化自动重算）
     readonly property var typeFilterModel: [{"form": "", "displayName": "全部类型"}].concat(typeEngine.enabledTypes)
 
     Component.onCompleted: {
-        // 库已打开时进入页面立即查询；类型下拉默认"全部类型"
-        if (libraryService.currentName)
-            page.reload()
-        if (typeCombo.count > 0)
-            typeCombo.currentIndex = 0
+        if (libraryService.currentName) page.reload()
+        if (typeCombo.count > 0) typeCombo.currentIndex = 0
     }
 
     Connections {
         target: typeEngine
-        function onPackagesChanged() {
-            page.reload()
-        }
+        function onPackagesChanged() { page.reload() }
     }
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        // ---- 顶行：搜索 / 类型筛选 ----
+        // 搜索 / 类型筛选
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
-            Layout.topMargin: 10
+            Layout.leftMargin: 16
+            Layout.rightMargin: 16
+            Layout.topMargin: 16
             spacing: 8
+
+            // 搜索范围：0=标题（默认） / 1=创作者（含别名），切换即时生效
+            ComboBox {
+                id: scopeCombo
+                Layout.preferredWidth: 110
+                model: ["标题", "创作者"]
+                currentIndex: 0
+                onActivated: {
+                    page.currentPage = 1
+                    page.reload()
+                }
+            }
 
             TextField {
                 id: searchField
@@ -115,7 +121,7 @@ Item {
             }
         }
 
-        // ---- 空态（有库但无数据）----
+        // 空态（有库但无数据）
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -129,10 +135,14 @@ Item {
             }
         }
 
-        // ---- 内容视图（网格）----
+        // 内容视图（网格）
         GridView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.leftMargin: 16
+            Layout.rightMargin: 16
+            Layout.topMargin: 12
+            Layout.bottomMargin: 12
             visible: page.totalCount > 0
             model: page.viewItems
             cellWidth: 210
@@ -142,13 +152,13 @@ Item {
             delegate: cardDelegate
         }
 
-        // ---- 分页器 ----
+        // 分页器
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
-            Layout.bottomMargin: 8
-            Layout.topMargin: 6
+            Layout.leftMargin: 16
+            Layout.rightMargin: 16
+            Layout.bottomMargin: 16
+            Layout.topMargin: 4
             visible: page.totalCount > 0
             spacing: 6
 
@@ -234,7 +244,7 @@ Item {
         }
     }
 
-    // ============ 网格卡片 ============
+    // 网格卡片
     Component {
         id: cardDelegate
         Rectangle {
@@ -273,7 +283,7 @@ Item {
                 }
                 Text {
                     width: parent.width
-                    text: (modelData.creatorName || "anonymous")
+                    text: (modelData.creatorName || "佚名")
                           + (modelData.creatorCount > 1 ? " 等 " + modelData.creatorCount + " 人" : "")
                           + "  ·  " + (modelData.type_form || "")
                     elide: Text.ElideRight
@@ -304,7 +314,7 @@ Item {
         }
     }
 
-    // ============ 右键操作菜单 ============
+    // 右键操作菜单
     Menu {
         id: contextMenu
         property var currentItem: null
@@ -415,7 +425,7 @@ Item {
         }
     }
 
-    // ============ 页码计算（窗口式：1 … 前/当前/后 … 末）============
+    // 页码计算（窗口式：1 … 前/当前/后 … 末）
     function pageNumbers() {
         var pages = []
         var total = page.pageCount

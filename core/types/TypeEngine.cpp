@@ -143,7 +143,8 @@ QVariantList TypeEngine::enrichRows(QVariantList rows) const
     return rows;
 }
 
-QVariantMap TypeEngine::queryPackages(const QString &form, const QString &keyword, int page)
+QVariantMap TypeEngine::queryPackages(const QString &form, const QString &keyword, int scope,
+                                      int page)
 {
     const int pageSize = m_settings->pageSize(); // M5 全局设置"每页数量"
     const int pageNum = qMax(1, page);
@@ -152,7 +153,7 @@ QVariantMap TypeEngine::queryPackages(const QString &form, const QString &keywor
     AppError error;
     int total = 0;
     QVariantList rows =
-        m_packageService->queryPackages(form, keyword, offset, pageSize, &total, &error);
+        m_packageService->queryPackages(form, keyword, scope, offset, pageSize, &total, &error);
     if (!error.ok())
         return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
 
@@ -351,18 +352,25 @@ QVariantMap TypeEngine::writeCreators(qint64 fileId, const QString &names)
                 {QStringLiteral("message"),
                  error.ok() ? QStringLiteral("数据包不存在：#%1").arg(fileId) : error.message}};
 
-    // 拆分 + 逐个 find-or-create（顺序即 sort_order，第一个为主要创作者）
+    // 拆分 + 逐个 find-or-create（顺序即 sort_order，第一个为主要创作者）；
+    // 空输入 → 归为默认创作者「佚名」（不产生空关联，保证始终可检索）
     QList<qint64> ids;
     const QStringList namesList = CreatorService::splitNames(names);
-    ids.reserve(namesList.size());
-    for (const QString &name : namesList) {
-        const qint64 id = m_creators->resolveOrCreate(name, CreatorService::Person, &error);
+    if (namesList.isEmpty()) {
+        const qint64 id = m_creators->resolveOrCreate(QString(), CreatorService::Person, &error);
         if (id < 0)
             return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
         ids.append(id);
+    } else {
+        for (const QString &name : namesList) {
+            const qint64 id = m_creators->resolveOrCreate(name, CreatorService::Person, &error);
+            if (id < 0)
+                return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+            ids.append(id);
+        }
     }
 
-    // 事务内整体替换该包的关联行（空列表 = 清空，显示层兜底 anonymous）
+    // 事务内整体替换该包的关联行（空输入已归为「佚名」，故不会清空）
     DbAccess &db = m_library->dbAccess();
     if (!db.transaction(&error))
         return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};

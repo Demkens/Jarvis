@@ -22,9 +22,9 @@ qint64 CreatorService::resolveOrCreate(const QString &name, int kind, AppError *
 {
     const QString trimmed = name.trimmed();
 
-    // 空名 → anonymous（id=0，建库时已预置）
+    // 空名 → 默认创作者「佚名」（建库/迁移时保证存在，按名解析即可）
     if (trimmed.isEmpty())
-        return 0;
+        return resolveOrCreate(anonymousName(), kind, error);
 
     // 1. 精确名
     AppError nameError;
@@ -134,10 +134,15 @@ bool CreatorService::setKind(qint64 creatorId, int kind, AppError *error)
                          error);
 }
 
+QString CreatorService::anonymousName()
+{
+    return QStringLiteral("佚名");
+}
+
 QString CreatorService::displayName(qint64 creatorId, AppError *error) const
 {
     if (creatorId <= 0)
-        return QStringLiteral("anonymous");
+        return anonymousName();
     return m_db->scalar(QStringLiteral("SELECT name FROM creator WHERE id = :id"),
                         {{QStringLiteral("id"), creatorId}}, error).toString();
 }

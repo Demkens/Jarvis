@@ -212,17 +212,25 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         return -1;
 
     // 多创作者：拆分输入文本并逐个 find-or-create（顺序即 sort_order，第一个为主要创作者）；
-    // 空输入 → 空列表 → 不写关联，显示层兜底为 anonymous
+    // 空输入 → 归为默认创作者「佚名」（不产生空关联，保证始终可检索）
     QList<qint64> creatorIds;
     const QStringList creatorNames = CreatorService::splitNames(plan.creatorName);
-    creatorIds.reserve(creatorNames.size());
-    for (const QString &name : creatorNames) {
-        const qint64 creatorId = m_creators->resolveOrCreate(name, CreatorService::Person, error);
+    if (creatorNames.isEmpty()) {
+        const qint64 creatorId = m_creators->resolveOrCreate(QString(), CreatorService::Person, error);
         if (creatorId < 0) {
             db.rollback();
             return -1;
         }
         creatorIds.append(creatorId);
+    } else {
+        for (const QString &name : creatorNames) {
+            const qint64 creatorId = m_creators->resolveOrCreate(name, CreatorService::Person, error);
+            if (creatorId < 0) {
+                db.rollback();
+                return -1;
+            }
+            creatorIds.append(creatorId);
+        }
     }
 
     // 分配 id：先写占位行取得自增 id，桶号随之确定（提交前回填）
@@ -293,7 +301,7 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
             return abortImport(QStringLiteral("分表写入失败"));
     }
 
-    // ---- 5.5 写创作者关联（多对多；空列表不写 → 显示层兜底 anonymous）----
+    // ---- 5.5 写创作者关联（多对多；空输入已归为「佚名」，故至少一条）----
     for (int index = 0; index < creatorIds.size(); ++index) {
         if (!db.execute(QStringLiteral(
                             "INSERT INTO file_creator (file_id, creator_id, sort_order) "

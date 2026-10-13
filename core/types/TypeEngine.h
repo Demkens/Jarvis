@@ -71,9 +71,10 @@ public:
     Q_INVOKABLE QVariantMap writeCreators(qint64 fileId, const QString &names);
 
     // ---- M4 资源页查询/操作（QML 门面，统一返回 {ok, message?, ...}）----
-    // 带条件分页查询：form 空=全部类型；keyword 标题模糊搜索；page 从 1 起（每页 M5 设置项）。
-    // 返回 {ok, total, pages, items[]}，items 含 creatorName/coverUrl（与 packages 同款拼接）。
-    Q_INVOKABLE QVariantMap queryPackages(const QString &form, const QString &keyword, int page);
+    // 带条件分页查询：form 空=全部类型；scope 0=标题 / 1=创作者（含别名）；keyword 模糊搜索；
+    // page 从 1 起（每页 M5 设置项）。返回 {ok, total, pages, items[]}（items 含 creatorName/coverUrl）。
+    Q_INVOKABLE QVariantMap queryPackages(const QString &form, const QString &keyword,
+                                          int scope, int page);
 
     // ---- M5 设置门面 ----
     // 返回 {ok, pageSize, scoreRecentWeight}（当前内存值）

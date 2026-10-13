@@ -26,10 +26,17 @@ public:
     // 列出包（form 为空 → 全部类型），按 id 升序
     QVariantList listPackages(const QString &form, AppError *error = nullptr) const;
 
+    // 搜索范围：标题 / 创作者（创作者匹配正式名与别名）
+    enum SearchScope
+    {
+        SearchTitle = 0,
+        SearchCreator = 1,
+    };
+
     // 带条件分页查询（M4 资源页）：
-    // form 空=全部类型；keyword 空=不过滤（否则标题 LIKE %kw%，参数化防注入）；
-    // offset/limit 决定当前页；total 输出总行数（供分页计数，可传空忽略）。
-    QVariantList queryPackages(const QString &form, const QString &keyword,
+    // form 空=全部类型；keyword 空=不过滤（否则按 scope 匹配标题或创作者，LIKE 通配符已转义、
+    // 参数化防注入）；offset/limit 决定当前页；total 输出总行数（供分页计数，可传空忽略）。
+    QVariantList queryPackages(const QString &form, const QString &keyword, int scope,
                                int offset, int limit, int *total, AppError *error = nullptr) const;
 
     // 单包详情：file 行 + type_form + 分表字段合并（如 draw 的 creation_date）

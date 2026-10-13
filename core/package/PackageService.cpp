@@ -8,6 +8,7 @@
 #include <QUrl>
 
 #include "common/Timestamps.h"
+#include "creator/CreatorService.h"
 #include "events/EventBus.h"
 #include "library/AppPaths.h"
 #include "library/LibraryService.h"
@@ -29,6 +30,19 @@ void setOut(AppError *out, AppError::Code code, const QString &message)
 {
     if (out != nullptr)
         *out = AppError::fail(code, message);
+}
+
+// 转义 LIKE 通配符：\ % _ 前加反斜杠，配合 SQL 的 ESCAPE '\' 使关键词按字面匹配
+QString escapeLike(const QString &raw)
+{
+    QString out;
+    out.reserve(raw.size() + 4);
+    for (const QChar ch : raw) {
+        if (ch == QLatin1Char('\\') || ch == QLatin1Char('%') || ch == QLatin1Char('_'))
+            out.append(QLatin1Char('\\'));
+        out.append(ch);
+    }
+    return out;
 }
 
 } // namespace
@@ -81,7 +95,7 @@ QVariantList PackageService::listPackages(const QString &form, AppError *error) 
     return list;
 }
 
-QVariantList PackageService::queryPackages(const QString &form, const QString &keyword,
+QVariantList PackageService::queryPackages(const QString &form, const QString &keyword, int scope,
                                            int offset, int limit, int *total,
                                            AppError *error) const
 {
@@ -94,8 +108,22 @@ QVariantList PackageService::queryPackages(const QString &form, const QString &k
     }
     const QString kw = keyword.trimmed();
     if (!kw.isEmpty()) {
-        where += QStringLiteral(" AND f.title LIKE :kw");
-        params.insert(QStringLiteral("kw"), QStringLiteral("%%1%").arg(kw));
+        // 通配符按字面匹配：转义 \ % _ 后两侧补 %，配合 ESCAPE '\'
+        const QString pattern = QLatin1Char('%') + escapeLike(kw) + QLatin1Char('%');
+        if (scope == SearchCreator) {
+            // 创作者范围：命中任一关联创作者的正式名或别名；
+            // EXISTS 避免多创作者/多别名导致同一 file 重复行
+            // （:kw_name / :kw_alias 用不同名，避免同一命名占位符重复绑定的兼容性问题）
+            where += QStringLiteral(
+                " AND EXISTS (SELECT 1 FROM file_creator fc JOIN creator c ON c.id = fc.creator_id "
+                "WHERE fc.file_id = f.id AND (c.name LIKE :kw_name ESCAPE '\\' "
+                "OR EXISTS (SELECT 1 FROM alias a WHERE a.id = c.id AND a.alias LIKE :kw_alias ESCAPE '\\')))");
+            params.insert(QStringLiteral("kw_name"), pattern);
+            params.insert(QStringLiteral("kw_alias"), pattern);
+        } else {
+            where += QStringLiteral(" AND f.title LIKE :kw_title ESCAPE '\\'");
+            params.insert(QStringLiteral("kw_title"), pattern);
+        }
     }
 
     AppError local;
@@ -172,7 +200,7 @@ QVariantMap PackageService::packageDetail(qint64 id, AppError *error) const
     }
 
     // 创作者多对多（全局关联表，不依赖分表）：按 sort_order 列出全部名字。
-    // creatorName=主要创作者（空则 anonymous）；creators=完整列表；creatorCount=数量。
+    // creatorName=主要创作者（无关联则兜底「佚名」）；creators=完整列表；creatorCount=数量。
     const QList<QVariantMap> creatorRows = db.select(
         QStringLiteral("SELECT c.name FROM file_creator fc "
                        "JOIN creator c ON c.id = fc.creator_id "
@@ -185,7 +213,7 @@ QVariantMap PackageService::packageDetail(qint64 id, AppError *error) const
         creators.append(creatorRow.value(QStringLiteral("name")).toString());
     row.insert(QStringLiteral("creators"), creators);
     row.insert(QStringLiteral("creatorName"),
-               creators.isEmpty() ? QStringLiteral("anonymous") : creators.first());
+               creators.isEmpty() ? CreatorService::anonymousName() : creators.first());
     row.insert(QStringLiteral("creatorCount"), creators.size());
     // 封面常驻 envs/<库>/cover/<桶>/<id>.jpg（离线也可显示）；缺失时置空 URL。
     // 预览面板 / 详情窗口直接消费此字段，与列表行 enrichRows 的 coverUrl 同款。
