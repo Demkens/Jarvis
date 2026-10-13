@@ -2,7 +2,8 @@
 // 由核心 ViewerWindow 通过 Loader 嵌入并注入：
 //   property var packageView  PackageViewContext：
 //     files（按序号的 [{index,name,url,size}]）、positionJson、savePosition()、title
-// 行为：按序号顺序浏览；翻页/缩放/跳页；位置实时写回（{"index": n}，1 起）。
+// 行为：按序号顺序浏览；默认缩放至适应窗口（完整显示，放大后可拖动）；翻页/缩放/跳页；
+//       位置实时写回（{"index": n}，1 起）。
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -98,56 +99,74 @@ Item {
                 onValueChanged: viewer.zoom = value
             }
             Button { text: "＋"; onClicked: zoomSlider.value += 0.1 }
-            Button { text: "适宽"; onClicked: viewer.fitZoom() }
+            Button { text: "适应窗口"; onClicked: viewer.fitZoom() }
         }
 
-        // 画布
+        // 画布（默认适应窗口：完整显示；放大超出视口后可拖动查看）
         Item {
+            id: canvasArea
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
 
-            Image {
-                id: canvas
-                anchors.centerIn: parent
-                fillMode: Image.PreserveAspectFit
-                source: pageCount() > 0
-                        ? packageView.files[viewer.pageIndex].url : ""
-                width: implicitWidth * viewer.zoom
-                height: implicitHeight * viewer.zoom
-                smooth: true
-                cache: false
+            Flickable {
+                id: flick
+                anchors.fill: parent
+                // 内容小于视口时用视口尺寸（图片自动居中）；超出时用图片尺寸（可拖动）
+                contentWidth: Math.max(width, imageItem.width)
+                contentHeight: Math.max(height, imageItem.height)
+                boundsBehavior: Flickable.StopAtBounds
+                interactive: imageItem.width > width || imageItem.height > height
 
-                Text {
-                    visible: canvas.status === Image.Loading
-                    anchors.centerIn: parent
-                    text: "加载中…"
-                    color: "#888888"
+                Image {
+                    id: imageItem
+                    // 居中：内容尺寸=视口→(contentW-imgW)/2；图片超出→贴左上，由 Flickable 拖动
+                    x: Math.max(0, (flick.width - width) / 2)
+                    y: Math.max(0, (flick.height - height) / 2)
+                    // 缩放基准：zoom=1.0 时等比缩放到刚好完整放入视口（取宽/高较小者，小图亦放大）
+                    readonly property real fitScale:
+                        (implicitWidth > 0 && implicitHeight > 0
+                         && flick.width > 0 && flick.height > 0)
+                        ? Math.min(flick.width / implicitWidth, flick.height / implicitHeight)
+                        : 1.0
+                    width: implicitWidth * fitScale * viewer.zoom
+                    height: implicitHeight * fitScale * viewer.zoom
+                    source: pageCount() > 0
+                            ? packageView.files[viewer.pageIndex].url : ""
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    cache: false
                 }
-                Text {
-                    visible: canvas.status === Image.Error && pageCount() > 0
-                    anchors.centerIn: parent
-                    text: "图片读取失败（实体库可能已离线）"
-                    color: "#c0341d"
+
+                // 滚轮翻页（消费 wheel 事件，避免 Flickable 同时滚动内容）
+                WheelHandler {
+                    onWheel: function (event) {
+                        event.accepted = true
+                        if (event.angleDelta.y > 0)
+                            prevButton.click()
+                        else if (event.angleDelta.y < 0)
+                            nextButton.click()
+                    }
                 }
             }
 
+            Text {
+                visible: imageItem.status === Image.Loading
+                anchors.centerIn: parent
+                text: "加载中…"
+                color: "#888888"
+            }
+            Text {
+                visible: imageItem.status === Image.Error && pageCount() > 0
+                anchors.centerIn: parent
+                text: "图片读取失败（实体库可能已离线）"
+                color: "#c0341d"
+            }
             Text {
                 visible: pageCount() === 0
                 anchors.centerIn: parent
                 text: "包内没有可显示的图片"
                 color: "#888888"
-            }
-
-            // 滚轮翻页
-            WheelHandler {
-                target: null
-                onWheel: function (event) {
-                    if (event.angleDelta.y > 0)
-                        prevButton.click()
-                    else if (event.angleDelta.y < 0)
-                        nextButton.click()
-                }
             }
         }
 
