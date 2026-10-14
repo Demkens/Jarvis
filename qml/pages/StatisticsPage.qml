@@ -5,7 +5,6 @@ Item {
     Text {
         anchors.centerIn: parent
         text: "数据统计"
-        color: "#e6eaf2"
         font.pixelSize: 16
     }
 }

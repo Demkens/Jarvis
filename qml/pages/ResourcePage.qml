@@ -172,7 +172,6 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: "库无文件，待导入"
-                color: "#888888"
                 font.pixelSize: 16
             }
         }
@@ -221,7 +220,6 @@ Item {
 
             Text {
                 text: "共 " + page.totalCount + " 条"
-                color: "#666666"
                 font.pixelSize: 12
             }
             Item { Layout.fillWidth: true }
@@ -310,7 +308,6 @@ Item {
             width: cardWidth
             height: cardHeight
             radius: 8
-            color: "#eef1f6"
             clip: true
 
             // 容器比例 = 图片比例（AR 已入库）→ 完整显示且无留白
@@ -461,7 +458,6 @@ Item {
                 Layout.fillWidth: true
                 text: "将删除该数据包（数据库记录、实体文件与封面），且不可恢复。确定继续？"
                 wrapMode: Text.WrapAnywhere
-                color: "#2b2b2b"
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight

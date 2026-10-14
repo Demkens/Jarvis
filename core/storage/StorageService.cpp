@@ -253,9 +253,10 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     if (!db.execute(QStringLiteral(
                         "INSERT INTO file (title, type_id, score, size, storage_path, aspect_ratio, "
                         "created_time, updated_time) "
-                        "VALUES (:title, :type_id, 0, 0, 0, :aspect, :now, :now)"),
+                        "VALUES (:title, :type_id, :score, 0, 0, :aspect, :now, :now)"),
                     {{QStringLiteral("title"), title},
                      {QStringLiteral("type_id"), typeId},
+                     {QStringLiteral("score"), plan.score},
                      {QStringLiteral("aspect"), coverAspect},
                      {QStringLiteral("now"), now}},
                     &id, error)) {

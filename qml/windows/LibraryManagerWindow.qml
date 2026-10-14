@@ -15,7 +15,6 @@ Window {
     height: 560
     minimumWidth: 640
     minimumHeight: 420
-    color: "#181d27"
     flags: Qt.Window | Qt.FramelessWindowHint
 
     // 便捷查询：按库名取链接库地址（打开所在文件夹 / 删除确认展示用）
@@ -64,7 +63,7 @@ Window {
         Text {
             text: mi.text
             font.pixelSize: 13
-            color: mi.enabled ? "#e6eaf2" : "#5c6472"
+            color: mi.enabled ? "#2b2b2b" : "#5c6472"
             anchors.left: parent.left
             anchors.leftMargin: 10
             anchors.verticalCenter: parent.verticalCenter
@@ -84,7 +83,6 @@ Window {
         id: titleBar
         width: parent.width
         height: 40
-        color: "#141824"
 
         MouseArea {
             anchors.fill: parent
@@ -93,7 +91,6 @@ Window {
 
         Text {
             text: "库管理"
-            color: "#e6eaf2"
             font.pixelSize: 14
             font.bold: true
             anchors.left: parent.left
@@ -111,7 +108,6 @@ Window {
             radius: 4
             Text {
                 text: "✕"
-                color: "#aab3c5"
                 font.pixelSize: 14
                 anchors.centerIn: parent
             }
@@ -137,7 +133,6 @@ Window {
         Rectangle {
             Layout.fillHeight: true
             Layout.preferredWidth: 500
-            color: "#181d27"
 
             ColumnLayout {
                 anchors.fill: parent
@@ -148,7 +143,6 @@ Window {
                     text: libraryService.libraries.length === 0
                           ? "尚未创建任何库。点击右侧「新建库」或「打开本地仓库」开始。"
                           : "全部库（" + libraryService.libraries.length + "）"
-                    color: "#aab3c5"
                     font.pixelSize: 13
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
@@ -218,7 +212,6 @@ Window {
                             color: menuArea.containsMouse ? "#2a3346" : "transparent"
                             Text {
                                 text: "⋯"
-                                color: "#aab3c5"
                                 font.pixelSize: 16
                                 anchors.centerIn: parent
                             }
@@ -241,14 +234,12 @@ Window {
         Rectangle {
             Layout.fillHeight: true
             Layout.preferredWidth: 1
-            color: "#272f3d"
         }
 
         // ---- 右：信息 + 操作 ----
         Rectangle {
             Layout.fillHeight: true
             Layout.fillWidth: true
-            color: "#181d27"
 
             ColumnLayout {
                 anchors.fill: parent
@@ -264,12 +255,8 @@ Window {
                         Layout.preferredWidth: 56
                         Layout.preferredHeight: 56
                         radius: 12
-                        color: "#1e2634"
-                        border.width: 1
-                        border.color: "#272f3d"
                         Text {
                             text: "J"
-                            color: "#e6eaf2"
                             font.pixelSize: 26
                             font.bold: true
                             anchors.centerIn: parent
@@ -279,14 +266,12 @@ Window {
                         spacing: 4
                         Text {
                             text: "Jarvis"
-                            color: "#e6eaf2"
                             font.pixelSize: 20
                             font.bold: true
                         }
                         // 版本信息：暂留空
                         Text {
                             text: ""
-                            color: "#aab3c5"
                             font.pixelSize: 12
                         }
                     }
@@ -316,12 +301,6 @@ Window {
         property string libName: ""
         width: 190
         padding: 5
-        background: Rectangle {
-            color: "#181d27"
-            radius: 8
-            border.color: "#272f3d"
-            border.width: 1
-        }
         ColumnLayout {
             anchors.fill: parent
             spacing: 0
@@ -368,12 +347,6 @@ Window {
         y: (win.height - height) / 2
         width: 460
         padding: 16
-        background: Rectangle {
-            color: "#181d27"
-            radius: 8
-            border.color: "#272f3d"
-            border.width: 1
-        }
 
         function submit() {
             const forms = []
@@ -408,7 +381,6 @@ Window {
 
             Text {
                 text: "新建库"
-                color: "#e6eaf2"
                 font.pixelSize: 15
                 font.bold: true
             }
@@ -416,7 +388,7 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                Label { text: "库名："; Layout.preferredWidth: 72; color: "#aab3c5" }
+                Label { text: "库名："; Layout.preferredWidth: 72 }
                 TextField {
                     id: nameField
                     Layout.fillWidth: true
@@ -429,7 +401,7 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                Label { text: "链接库："; Layout.preferredWidth: 72; color: "#aab3c5" }
+                Label { text: "链接库："; Layout.preferredWidth: 72 }
                 TextField {
                     id: linkField
                     Layout.fillWidth: true
@@ -442,7 +414,7 @@ Window {
                 }
             }
 
-            Label { text: "启用类型："; color: "#aab3c5" }
+            Label { text: "启用类型：" }
 
             Repeater {
                 id: typesRepeater
@@ -490,12 +462,6 @@ Window {
         width: 380
         padding: 16
         property string libName: ""
-        background: Rectangle {
-            color: "#181d27"
-            radius: 8
-            border.color: "#272f3d"
-            border.width: 1
-        }
 
         function submit() {
             const result = libraryService.renameLibrary(renameForm.libName,
@@ -514,7 +480,6 @@ Window {
 
             Text {
                 text: "重命名库"
-                color: "#e6eaf2"
                 font.pixelSize: 15
                 font.bold: true
             }
@@ -522,7 +487,7 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                Label { text: "库名："; Layout.preferredWidth: 56; color: "#aab3c5" }
+                Label { text: "库名："; Layout.preferredWidth: 56 }
                 TextField {
                     id: renameTextField
                     Layout.fillWidth: true
@@ -564,12 +529,6 @@ Window {
         padding: 16
         property string libName: ""
         property bool deleteEntityFiles: false
-        background: Rectangle {
-            color: "#181d27"
-            radius: 8
-            border.color: "#272f3d"
-            border.width: 1
-        }
 
         function submit() {
             const result = libraryService.deleteLibrary(deleteForm.libName,
@@ -590,14 +549,12 @@ Window {
 
             Text {
                 text: "删除库「" + deleteForm.libName + "」"
-                color: "#e6eaf2"
                 font.pixelSize: 15
                 font.bold: true
             }
 
             Text {
                 text: "链接库目录：" + win.addressOf(deleteForm.libName)
-                color: "#aab3c5"
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true

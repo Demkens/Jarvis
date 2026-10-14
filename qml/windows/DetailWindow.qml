@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// M4 独立详情窗口（开发文档 8.2 详情页）：元数据 + 包内文件结构化预览。
+// 独立详情窗口：元数据 + 包内文件结构化预览。
 // 数据源：typeEngine.readFields(id) 取元数据；createPackageView(id) 取包内文件清单。
 Window {
     id: window
@@ -12,7 +12,6 @@ Window {
     height: 680
     minimumWidth: 720
     minimumHeight: 520
-    color: "#ffffff"
 
     property int packageId: 0
     property var detail: ({})
@@ -65,8 +64,6 @@ Window {
         Rectangle {
             Layout.preferredWidth: 360
             Layout.fillHeight: true
-            color: "#f7f8fb"
-            border.color: "#e0e4ec"
 
             ColumnLayout {
                 anchors.fill: parent
@@ -78,7 +75,6 @@ Window {
                     Text {
                         Layout.fillWidth: true
                         text: "元数据"
-                        color: "#2b2b2b"
                         font.pixelSize: 15
                         font.bold: true
                     }
@@ -105,7 +101,6 @@ Window {
                     Layout.preferredHeight: 180
                     Layout.alignment: Qt.AlignHCenter
                     radius: 6
-                    color: "#eef1f6"
                     clip: true
                     Image {
                         anchors.fill: parent
@@ -114,18 +109,18 @@ Window {
                     }
                 }
 
-                Text { text: "标题"; color: "#888888"; font.pixelSize: 11 }
-                Text { text: window.detail.title || "untitled"; color: "#2b2b2b"; font.pixelSize: 14; font.bold: true; wrapMode: Text.WrapAnywhere }
+                Text { text: "标题"; font.pixelSize: 11 }
+                Text { text: window.detail.title || "untitled"; font.pixelSize: 14; font.bold: true; wrapMode: Text.WrapAnywhere }
 
-                Text { text: "类型：" + window.formDisplayName(window.detail.type_form); color: "#444444"; font.pixelSize: 12 }
+                Text { text: "类型：" + window.formDisplayName(window.detail.type_form); font.pixelSize: 12 }
                 Text { text: "创作者：" + (window.detail.creatorName || "佚名")
                        + (window.detail.creatorCount > 1 ? " 等 " + window.detail.creatorCount + " 人" : "")
-                       ; color: "#444444"; font.pixelSize: 12 }
-                Text { text: "创作日期：" + (window.detail.creation_date || "—"); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "评分：" + (window.detail.score > 0 ? window.detail.score : "未评分"); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "大小：" + window.formatBytes(window.detail.size); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "入库：" + window.formatTime(window.detail.created_time); color: "#444444"; font.pixelSize: 12 }
-                Text { text: "更新：" + window.formatTime(window.detail.updated_time); color: "#444444"; font.pixelSize: 12 }
+                       ; font.pixelSize: 12 }
+                Text { text: "创作日期：" + (window.detail.creation_date || "—"); font.pixelSize: 12 }
+                Text { text: "评分：" + (window.detail.score > 0 ? window.detail.score : "未评分"); font.pixelSize: 12 }
+                Text { text: "大小：" + window.formatBytes(window.detail.size); font.pixelSize: 12 }
+                Text { text: "入库：" + window.formatTime(window.detail.created_time); font.pixelSize: 12 }
+                Text { text: "更新：" + window.formatTime(window.detail.updated_time); font.pixelSize: 12 }
 
                 Item { Layout.fillHeight: true }
             }
@@ -143,7 +138,6 @@ Window {
                 Layout.topMargin: 14
                 Layout.bottomMargin: 8
                 text: "包内文件（" + window.fileList.length + " 项）"
-                color: "#2b2b2b"
                 font.pixelSize: 14
                 font.bold: true
             }
@@ -163,8 +157,6 @@ Window {
                     width: 176
                     height: 140
                     radius: 6
-                    color: "#f7f8fb"
-                    border.color: "#e0e4ec"
                     clip: true
                     ColumnLayout {
                         anchors.fill: parent
@@ -174,7 +166,6 @@ Window {
                             Layout.preferredWidth: parent.width
                             Layout.preferredHeight: 84
                             radius: 4
-                            color: "#eef1f6"
                             clip: true
                             Image {
                                 anchors.fill: parent
@@ -186,14 +177,12 @@ Window {
                             Layout.fillWidth: true
                             text: modelData.name || ""
                             elide: Text.ElideRight
-                            color: "#2b2b2b"
                             font.pixelSize: 12
                         }
                         Text {
                             Layout.fillWidth: true
                             text: "第 " + modelData.index + " 页 · " + window.formatBytes(modelData.size)
                             elide: Text.ElideRight
-                            color: "#888888"
                             font.pixelSize: 11
                         }
                     }

@@ -1,4 +1,4 @@
-// draw 类型包 · 图集查看器（开发文档 7.4）
+// draw 类型包 · 图集查看器
 // 由核心 ViewerWindow 通过 Loader 嵌入并注入：
 //   property var packageView  PackageViewContext：
 //     files（按序号的 [{index,name,url,size}]）、positionJson、savePosition()、title
@@ -154,7 +154,6 @@ Item {
                 visible: imageItem.status === Image.Loading
                 anchors.centerIn: parent
                 text: "加载中…"
-                color: "#888888"
             }
             Text {
                 visible: imageItem.status === Image.Error && pageCount() > 0
@@ -166,7 +165,6 @@ Item {
                 visible: pageCount() === 0
                 anchors.centerIn: parent
                 text: "包内没有可显示的图片"
-                color: "#888888"
             }
         }
 

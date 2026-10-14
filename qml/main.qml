@@ -31,7 +31,6 @@ Item {
             visible: false
             width: 1360; height: 865
             minimumWidth: 1300; minimumHeight: 800
-            color: "#181d27"
             // 无窗口标签
             flags: Qt.FramelessWindowHint | Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint
 

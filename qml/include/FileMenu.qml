@@ -1,6 +1,6 @@
 // 文件菜单
 import QtQuick
-import QtQuick.Controls.Basic
+import QtQuick.Controls
 
 import "."
 
@@ -28,7 +28,6 @@ Item {
             anchors.centerIn: parent
             text: "文件"
             font.pixelSize: 13
-            color: "#e6eaf2"
         }
 
         MouseArea {

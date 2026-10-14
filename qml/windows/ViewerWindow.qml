@@ -17,7 +17,6 @@ Window {
     height: 760
     minimumWidth: 720
     minimumHeight: 560
-    color: "#1e1e1e"
 
     function openPackage(id) {
         window.packageId = id

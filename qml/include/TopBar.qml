@@ -20,7 +20,6 @@ Item {
     // 顶栏衬底
     Rectangle {
         anchors.fill: parent
-        color: "#272f3d"
 
         // 顶栏空白区拖动，调用系统级窗口移动函数
         MouseArea {
@@ -55,7 +54,6 @@ Item {
                         text: "Jarvis"
                         font.pixelSize: 13
                         font.bold: true
-                        color: "#e6eaf2"
                     }
 
                     Text {
@@ -69,7 +67,6 @@ Item {
                         text: libraryService.currentName
                         font.pixelSize: 13
                         font.bold: true
-                        color: "#e6eaf2"
                     }
                 }
 
@@ -85,7 +82,6 @@ Item {
             // 分隔线
             Rectangle {
                 width: 2; height: 22
-                color: "#455164"
 
                 Layout.alignment: Qt.AlignVCenter
                 Layout.leftMargin: 5
@@ -110,7 +106,6 @@ Item {
             // 分隔线
             Rectangle {
                 width: 2; height: 22
-                color: "#455164"
 
                 Layout.alignment: Qt.AlignVCenter
                 Layout.leftMargin: 5

@@ -22,13 +22,6 @@ Dialog {
     // 保存失败时的错误文案（状态栏已移除，失败经 onAccepted 由调用方处理）
     property string errText: ""
 
-    background: Rectangle {
-        radius: 6
-        color: "#f0f0f0"
-        border.width: 1
-        border.color: "#b8b8b8"
-    }
-
     // 打开时重读当前设置：上次未保存的修改不残留
     onOpened: {
         const s = typeEngine.settings()
@@ -103,7 +96,6 @@ Dialog {
 
         Text {
             text: "评分权重 = 二次评分时新评分占比（旧分 ×(1-w) + 新分 ×w），0 = 始终用旧分"
-            color: "#888888"
             font.pixelSize: 11
             wrapMode: Text.WordWrap
             Layout.fillWidth: true

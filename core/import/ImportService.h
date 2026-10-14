@@ -31,6 +31,12 @@ public:
     // 计划的标题/创作者/日期允许 QML 在确认页批量补填后再提交
     Q_INVOKABLE QVariantMap scanPreprocess(const QString &form, const QString &rootDir);
 
+    // 导入前预览（通道A 左侧只读元数据用）。返回：
+    // {ok, id?, count, size, message?}
+    // id = 预计的下一个自增主键（SELECT MAX(id)+1，单用户场景即实际将分配的 id）；
+    // count/size = 所选文件数与总字节数（QML 无法 stat 文件，故在核心算）。
+    Q_INVOKABLE QVariantMap previewImport(const QVariantList &files);
+
     // 导出包到已存在的空目录
     Q_INVOKABLE QVariantMap exportPackage(qint64 id, const QString &destDir);
 

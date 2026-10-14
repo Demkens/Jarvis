@@ -1,4 +1,10 @@
 // 数据包导入对话框
+// 结构：顶栏（通道A 标识数据类型）+ 内容页栈（向导页 / 预处理页 / 结果页）+ 底栏（通道A 导入·关闭）。
+// 契约：
+//  - 通道A(向导)：类型包 wizard.qml 自绘内容；本对话框提供顶栏与底栏「导入/关闭」。
+//    导入 → wizardLoader.item.submit()；失败 → 类型包发 importFailed → 弹出独立警告弹窗。
+//    成功后类型包自行复位回拖拽区，本对话框不跳结果页、不关闭。
+//  - 通道B(预处理)：内容与结果页完全归本对话框，顶/底栏不显示。
 
 import QtQuick
 import QtQuick.Controls
@@ -13,13 +19,22 @@ Dialog {
     width: 840; height: 640
     title: "导入数据"
     modal: true
-    standardButtons: Dialog.Close
+    standardButtons: Dialog.NoButton   // 关闭/导入由自建底栏控制
     padding: 0      // 弹窗内容区与边框间的内边距
 
     property string form: ""
     property string channel: "wizard"
     property var scanPlans: []
     property var lastResult: ({})
+
+    // 函数: 顶栏标识——按 form 从已启用类型中取显示名
+    function typeDisplayName() {
+        var list = typeEngine.enabledTypes
+        for (var i = 0; i < list.length; ++i)
+            if (list[i].form === dialog.form)
+                return list[i].displayName || list[i].form
+        return dialog.form
+    }
 
     // 函数: 清空弹窗所有瞬时状态（类型/通道由 start() 传入，此处统一置空）
     function resetDialog() {
@@ -49,264 +64,302 @@ Dialog {
         open()
     }
 
-    // 函数: 导入完成, 存储结果
+    // 函数: 导入完成, 存储结果（仅通道B 使用）
     function showResult(result) {
         lastResult = result
         steps.currentIndex = 2
     }
 
     // 背景显示调整
-    background: Rectangle {
-        radius: 6
-        color: '#b5bbc5'         // 面板/浮出区（比 core 略亮）
-        border.width: 1
-        border.color: "#272f3d"  // 分隔线色作边框
-    }
-
-    // 页面切换管理器
-    StackLayout {
-        id: steps
+    ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
-        currentIndex: 0
+        spacing: 10
 
-        // ---------- 向导页 ----------
-        Loader {
-            id: wizardLoader
-            active: false
-            source: dialog.form !== "" ? typeEngine.wizardUrl(dialog.form) : ""
-            onLoaded: {
-                item.form = dialog.form
-                item.plansSubmitted.connect(function (result) { dialog.showResult(result) })
-                item.cancelRequested.connect(function () {
-                    wizardLoader.active = false
-                    dialog.close()
-                })
-            }
+        // ---------- 顶栏：标识当前导入的数据类型（仅通道A） ----------
+        Text {
+            visible: dialog.channel === "wizard"
+            text: "导入 · " + dialog.typeDisplayName()
+            font.pixelSize: 15
+            font.bold: true
+            Layout.fillWidth: true
         }
 
-        // ---------- 预处理扫描 + 确认 ----------
-        ColumnLayout {
-            spacing: 10
+        // ---------- 页面切换管理器 ----------
+        StackLayout {
+            id: steps
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: 0
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-                Button {
-                    text: "选择待整理目录…"
-                    onClicked: rootFolderPicker.open()
+            // ---------- 向导页（通道A：类型包自绘） ----------
+            Loader {
+                id: wizardLoader
+                active: false
+                source: dialog.form !== "" ? typeEngine.wizardUrl(dialog.form) : ""
+                onLoaded: {
+                    item.form = dialog.form
+                    // 失败 → 独立警告弹窗；成功由类型包自行复位（不跳结果页）
+                    item.importFailed.connect(function (message) { importWarn.show(message) })
                 }
+            }
+
+            // ---------- 预处理扫描 + 确认（通道B） ----------
+            ColumnLayout {
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    Button {
+                        text: "选择待整理目录…"
+                        onClicked: rootFolderPicker.open()
+                    }
+                    Label {
+                        text: scanRoot.text
+                        font.pixelSize: 12
+                        elide: Label.ElideMiddle
+                        Layout.fillWidth: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: "取消"
+                        onClicked: dialog.close()
+                    }
+                    Button {
+                        text: "开始导入 " + scanPlans.length + " 个包"
+                        highlighted: true
+                        enabled: scanPlans.length > 0
+                        onClicked: {
+                            var plans = []
+                            for (var i = 0; i < scanPlans.length; ++i) {
+                                var p = scanPlans[i]
+                                plans.push({
+                                    title: p.title,
+                                    creatorName: p.creatorName,
+                                    creationDate: p.creationDate,
+                                    files: p.files,
+                                    coverSourcePath: p.coverSourcePath
+                                })
+                            }
+                            dialog.showResult(importService.executePlans(dialog.form, plans))
+                        }
+                    }
+                }
+
+                // 扫描警告（命名约定未满足的项目）
+                Rectangle {
+                    visible: scanWarnings.count > 0
+                    Layout.fillWidth: true
+                    implicitHeight: scanWarnings.implicitHeight + 16
+                    radius: 4
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+                        Repeater {
+                            id: scanWarnings
+                            property var messages: []
+                            model: messages
+                            Text {
+                                font.pixelSize: 12
+                                color: "#d9a05b"
+                                text: "⚠ " + (index + 1) + ". " + modelData
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
+                }
+
                 Label {
-                    text: scanRoot.text
+                    visible: scanPlans.length === 0
+                    text: "约定：每个子文件夹 = 一个图集包（图片按文件名排序，可放 meta.json 补标题/画家/日期/封面）；根目录散图合并为一个包。"
                     font.pixelSize: 12
-                    color: "#aab3c5"
-                    elide: Label.ElideMiddle
+                    wrapMode: Text.WordWrap
                     Layout.fillWidth: true
                 }
-                Item { Layout.fillWidth: true }
-                Button {
-                    text: "取消"
-                    onClicked: dialog.close()
-                }
-                Button {
-                    text: "开始导入 " + scanPlans.length + " 个包"
-                    highlighted: true
-                    enabled: scanPlans.length > 0
-                    onClicked: {
-                        var plans = []
-                        for (var i = 0; i < scanPlans.length; ++i) {
-                            var p = scanPlans[i]
-                            plans.push({
-                                title: p.title,
-                                creatorName: p.creatorName,
-                                creationDate: p.creationDate,
-                                files: p.files,
-                                coverSourcePath: p.coverSourcePath
-                            })
-                        }
-                        dialog.showResult(importService.executePlans(dialog.form, plans))
-                    }
-                }
-            }
 
-            // 扫描警告（命名约定未满足的项目）
-            Rectangle {
-                visible: scanWarnings.count > 0
-                Layout.fillWidth: true
-                implicitHeight: scanWarnings.implicitHeight + 16
-                radius: 4
-                color: "#262c38"
-                border.width: 1
-                border.color: "#a07030"
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    visible: scanPlans.length > 0
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 2
-                    Repeater {
-                        id: scanWarnings
-                        property var messages: []
-                        model: messages
-                        Text {
-                            font.pixelSize: 12
-                            color: "#d9a05b"
-                            text: "⚠ " + (index + 1) + ". " + modelData
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                        }
-                    }
-                }
-            }
+                    Column {
+                        width: dialog.width - 48
+                        spacing: 8
 
-            Label {
-                visible: scanPlans.length === 0
-                text: "约定：每个子文件夹 = 一个图集包（图片按文件名排序，可放 meta.json 补标题/画家/日期/封面）；根目录散图合并为一个包。"
-                color: "#aab3c5"
-                font.pixelSize: 12
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
+                        Repeater {
+                            model: dialog.scanPlans
+                            delegate: Rectangle {
+                                required property int index
+                                required property var modelData
+                                width: parent.width
+                                implicitHeight: rowLayout.implicitHeight + 20
+                                radius: 4
 
-            ScrollView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                visible: scanPlans.length > 0
+                                RowLayout {
+                                    id: rowLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 10
 
-                Column {
-                    width: dialog.width - 48
-                    spacing: 8
-
-                    Repeater {
-                        model: dialog.scanPlans
-                        delegate: Rectangle {
-                            required property int index
-                            required property var modelData
-                            width: parent.width
-                            implicitHeight: rowLayout.implicitHeight + 20
-                            radius: 4
-                            color: "#141824"
-                            border.width: 1
-                            border.color: "#272f3d"
-
-                            RowLayout {
-                                id: rowLayout
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 10
-
-                                ColumnLayout {
-                                    spacing: 2
-                                    RowLayout {
-                                        spacing: 8
-                                        Label { text: "标题"; font.pixelSize: 12; color: "#aab3c5" }
-                                        TextField {
-                                            text: dialog.scanPlans[index].title
-                                            font.pixelSize: 13
-                                            color: "#e6eaf2"
-                                            Layout.preferredWidth: 240
-                                            background: Rectangle { color: "#1e2634"; border.color: "#272f3d"; border.width: 1; radius: 3 }
-                                            onTextChanged: dialog.scanPlans[index].title = text
+                                    ColumnLayout {
+                                        spacing: 2
+                                        RowLayout {
+                                            spacing: 8
+                                            Label { text: "标题"; font.pixelSize: 12 }
+                                            TextField {
+                                                text: dialog.scanPlans[index].title
+                                                font.pixelSize: 13
+                                                Layout.preferredWidth: 240
+                                                onTextChanged: dialog.scanPlans[index].title = text
+                                            }
                                         }
-                                    }
-                                    RowLayout {
-                                        spacing: 8
-                                        Label { text: "画家"; font.pixelSize: 12; color: "#aab3c5" }
-                                        TextField {
-                                            text: dialog.scanPlans[index].creatorName
-                                            placeholderText: "佚名"
-                                            placeholderTextColor: "#5c6472"
-                                            font.pixelSize: 13
-                                            color: "#e6eaf2"
-                                            Layout.preferredWidth: 160
-                                            background: Rectangle { color: "#1e2634"; border.color: "#272f3d"; border.width: 1; radius: 3 }
-                                            onTextChanged: dialog.scanPlans[index].creatorName = text
+                                        RowLayout {
+                                            spacing: 8
+                                            Label { text: "画家"; font.pixelSize: 12 }
+                                            TextField {
+                                                text: dialog.scanPlans[index].creatorName
+                                                placeholderText: "佚名"
+                                                font.pixelSize: 13
+                                                Layout.preferredWidth: 160
+                                                onTextChanged: dialog.scanPlans[index].creatorName = text
+                                            }
+                                            Label { text: "日期"; font.pixelSize: 12 }
+                                            TextField {
+                                                text: dialog.scanPlans[index].creationDate
+                                                placeholderText: "YYYY-MM-DD"
+                                                font.pixelSize: 13
+                                                Layout.preferredWidth: 140
+                                                onTextChanged: dialog.scanPlans[index].creationDate = text
+                                            }
                                         }
-                                        Label { text: "日期"; font.pixelSize: 12; color: "#aab3c5" }
-                                        TextField {
-                                            text: dialog.scanPlans[index].creationDate
-                                            placeholderText: "YYYY-MM-DD"
-                                            placeholderTextColor: "#5c6472"
-                                            font.pixelSize: 13
-                                            color: "#e6eaf2"
-                                            Layout.preferredWidth: 140
-                                            background: Rectangle { color: "#1e2634"; border.color: "#272f3d"; border.width: 1; radius: 3 }
-                                            onTextChanged: dialog.scanPlans[index].creationDate = text
+                                        Text {
+                                            text: dialog.scanPlans[index].files.length + " 个文件"
+                                                  + (dialog.scanPlans[index].coverSourcePath
+                                                     ? "；封面：" + dialog.scanPlans[index].coverSourcePath
+                                                         .split(/[\\/]/).pop() : "；封面默认首张")
+                                            font.pixelSize: 11
                                         }
-                                    }
-                                    Text {
-                                        text: dialog.scanPlans[index].files.length + " 个文件"
-                                              + (dialog.scanPlans[index].coverSourcePath
-                                                 ? "；封面：" + dialog.scanPlans[index].coverSourcePath
-                                                     .split(/[\\/]/).pop() : "；封面默认首张")
-                                        color: "#aab3c5"
-                                        font.pixelSize: 11
                                     }
                                 }
                             }
                         }
                     }
                 }
+
+                Label { id: scanRoot; visible: false }
             }
 
-            Label { id: scanRoot; visible: false }
-        }
+            // ---------- 结果报告（通道B） ----------
+            ColumnLayout {
+                spacing: 12
 
-        // ---------- 结果报告 ----------
-        ColumnLayout {
-            spacing: 12
+                Item { Layout.preferredHeight: 30 }
 
-            Item { Layout.preferredHeight: 30 }
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    font.pixelSize: 18
+                    font.bold: true
+                    color: lastResult.failed > 0 ? "#e5675f" : "#4caf7d"
+                    text: lastResult.failed > 0
+                          ? "导入完成：成功 " + lastResult.success + " 个，失败 " + lastResult.failed + " 个"
+                          : "全部 " + (lastResult.success || 0) + " 个数据包导入成功"
+                }
 
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                font.pixelSize: 18
-                font.bold: true
-                color: lastResult.failed > 0 ? "#e5675f" : "#4caf7d"
-                text: lastResult.failed > 0
-                      ? "导入完成：成功 " + lastResult.success + " 个，失败 " + lastResult.failed + " 个"
-                      : "全部 " + (lastResult.success || 0) + " 个数据包导入成功"
-            }
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    visible: lastResult.failed > 0
 
-            ScrollView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                visible: lastResult.failed > 0
-
-                Column {
-                    width: dialog.width - 48
-                    spacing: 6
-                    Repeater {
-                        model: dialog.lastResult.results || []
-                        delegate: Rectangle {
-                            required property var modelData
-                            visible: !modelData.ok
-                            width: parent.width
-                            height: 34
-                            radius: 4
-                            color: "#2a2320"
-                            Text {
-                                anchors.centerIn: parent
-                                font.pixelSize: 12
-                                color: "#e5675f"
-                                text: "第 " + (modelData.index + 1) + " 项失败：" + modelData.message
+                    Column {
+                        width: dialog.width - 48
+                        spacing: 6
+                        Repeater {
+                            model: dialog.lastResult.results || []
+                            delegate: Rectangle {
+                                required property var modelData
+                                visible: !modelData.ok
+                                width: parent.width
+                                height: 34
+                                radius: 4
+                                Text {
+                                    anchors.centerIn: parent
+                                    font.pixelSize: 12
+                                    color: "#e5675f"
+                                    text: "第 " + (modelData.index + 1) + " 项失败：" + modelData.message
+                                }
                             }
                         }
                     }
                 }
-            }
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: "完成"
+                        highlighted: true
+                        onClicked: {
+                            dialog.accept()
+                            dialog.resetDialog()
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------- 底栏：导入 / 关闭（仅通道A） ----------
+        RowLayout {
+            visible: dialog.channel === "wizard"
+            Layout.fillWidth: true
+            spacing: 10
+            Item { Layout.fillWidth: true }
+            Button {
+                text: "导入"
+                highlighted: true
+                enabled: wizardLoader.item ? wizardLoader.item.ready : false
+                onClicked: if (wizardLoader.item) wizardLoader.item.submit()
+            }
+            Button {
+                text: "关闭"
+                onClicked: dialog.close()
+            }
+        }
+    }
+
+    // 导入失败警告（独立弹窗，仅通道A 使用）
+    Dialog {
+        id: importWarn
+        property string message: ""
+        function show(text) {
+            message = text
+            open()
+        }
+        title: "导入失败"
+        modal: true
+        standardButtons: Dialog.NoButton
+        width: 440
+        contentItem: ColumnLayout {
+            spacing: 14
+            Text {
+                Layout.fillWidth: true
+                text: importWarn.message
+                color: "#c0341d"
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "完成"
+                    text: "关闭"
                     highlighted: true
-                    onClicked: {
-                        dialog.accept()
-                        dialog.resetDialog()
-                    }
+                    onClicked: importWarn.close()
                 }
             }
         }

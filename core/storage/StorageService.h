@@ -18,6 +18,7 @@ struct ImportPlan
     QString title;           // 标题；空则落库为 'untitled'
     QString creatorName;     // 创作者名；空 → 「佚名」，经 CreatorService find-or-create
     QString creationDate;    // 创作日期 TEXT：YYYY / YYYY-MM / YYYY-MM-DD；空 → NULL
+    int score = 0;           // 初始评分 0–100；0 = 未评分
     QStringList files;       // 有序源文件绝对路径，顺序即包内序号（001.ext…）
     QString coverSourcePath; // 封面来源文件；空 → 取 files 首个
 };

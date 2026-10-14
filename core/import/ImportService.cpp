@@ -42,6 +42,7 @@ ImportPlan ImportService::planFromMap(const QString &form, const QVariantMap &ma
     plan.title = map.value(QStringLiteral("title")).toString();
     plan.creatorName = map.value(QStringLiteral("creatorName")).toString();
     plan.creationDate = map.value(QStringLiteral("creationDate")).toString();
+    plan.score = map.value(QStringLiteral("score"), 0).toInt();
     plan.coverSourcePath = map.value(QStringLiteral("coverSourcePath")).toString();
     const QVariantList files = map.value(QStringLiteral("files")).toList();
     for (const QVariant &file : files)
@@ -196,6 +197,39 @@ QVariantMap ImportService::scanPreprocess(const QString &form, const QString &ro
         {QStringLiteral("ok"), true},
         {QStringLiteral("plans"), plans},
         {QStringLiteral("warnings"), warnings},
+    };
+}
+
+QVariantMap ImportService::previewImport(const QVariantList &files)
+{
+    auto fail = [](const QString &message) {
+        return QVariantMap{{QStringLiteral("ok"), false}, {QStringLiteral("message"), message}};
+    };
+
+    if (!m_library->isOpen())
+        return fail(QStringLiteral("没有打开的库"));
+
+    // 预计 id：MAX(id)+1（单用户单进程，即实际将分配的值）
+    AppError dbError;
+    const qint64 nextId = m_library->dbAccess()
+                              .scalar(QStringLiteral("SELECT IFNULL(MAX(id),0)+1 FROM file"), {},
+                                      &dbError)
+                              .toLongLong();
+    if (!dbError.ok())
+        return fail(dbError.message);
+
+    qint64 totalSize = 0;
+    for (const QVariant &file : files) {
+        const QFileInfo info(file.toString());
+        if (info.isFile())
+            totalSize += info.size();
+    }
+
+    return {
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("id"), nextId},
+        {QStringLiteral("count"), files.size()},
+        {QStringLiteral("size"), totalSize},
     };
 }
 

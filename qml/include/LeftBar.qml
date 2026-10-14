@@ -8,7 +8,6 @@ Rectangle {
     id: leftBar
     implicitWidth: 50
     Layout.fillHeight: true
-    color: '#333e60'
 
     // 输入: 当前选中页索引（外部传入，作为各导航项高亮的唯一依据）
     property int currentIndex: 0
