@@ -66,15 +66,15 @@ public:
     Q_INVOKABLE QVariantMap writeFields(qint64 fileId, const QVariantMap &values);
 
     // 写创作者多对多：names 为分隔符拼接文本（splitNames 拆分，第一个为主要创作者）；
-    // 事务内整体替换该包的 file_creator 行（先删后插，空文本=清空关联）。
+    // 事务内整体替换该包的 file_creator 行（先删后插）；空文本 → 归为默认创作者「佚名」。
     // 返回 {ok, message?}；成功后广播 PackageUpdated。
     Q_INVOKABLE QVariantMap writeCreators(qint64 fileId, const QString &names);
 
     // ---- M4 资源页查询/操作（QML 门面，统一返回 {ok, message?, ...}）----
-    // 带条件分页查询：form 空=全部类型；scope 0=标题 / 1=创作者（含别名）；keyword 模糊搜索；
+    // 带条件分页查询：filters 见 PackageService::QueryFilters（键 form/keyword/scope/
+    // creationFrom/creationTo/createdFrom/createdTo，缺键即该维度不限；日期键格式 YYYY-MM-DD）；
     // page 从 1 起（每页 M5 设置项）。返回 {ok, total, pages, items[]}（items 含 creatorName/coverUrl）。
-    Q_INVOKABLE QVariantMap queryPackages(const QString &form, const QString &keyword,
-                                          int scope, int page);
+    Q_INVOKABLE QVariantMap queryPackages(const QVariantMap &filters, int page);
 
     // ---- M5 设置门面 ----
     // 返回 {ok, pageSize, scoreRecentWeight}（当前内存值）
@@ -85,9 +85,11 @@ public:
     // （评分权重立即生效；每页数量下次查询即用）。返回 {ok, message?}。
     Q_INVOKABLE QVariantMap saveSettings(const QVariantMap &values);
 
-    // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 删除
+    // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 创作日期 / 删除
     Q_INVOKABLE QVariantMap updateTitle(qint64 fileId, const QString &title);
     Q_INVOKABLE QVariantMap ratePackage(qint64 fileId, int score);
+    // 创作日期（核心列，格式固定 YYYY-MM-DD）：空串或非法格式返回 {ok:false}
+    Q_INVOKABLE QVariantMap updateCreationDate(qint64 fileId, const QString &date);
     Q_INVOKABLE QVariantMap deletePackage(qint64 fileId);
 
     // 包实体目录绝对路径（"打开实体位置"用）；离线/库未开/包不存在返回空串

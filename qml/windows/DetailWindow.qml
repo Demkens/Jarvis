@@ -18,6 +18,9 @@ Window {
     property var fileList: []
     property string detailTitle: ""
 
+    // 输出: 请求编辑当前包元数据（由 AppDialogs 打开编辑弹窗）
+    signal editRequested(int packageId)
+
     function formatBytes(bytes) {
         if (!bytes)
             return "0 B"
@@ -44,6 +47,22 @@ Window {
                 return list[i].displayName
         }
         return form
+    }
+
+    // 函数: 重新读取当前包的元数据（编辑弹窗保存后刷新展示）
+    // 输入/输出: 无（读 window.packageId）
+    function refresh() {
+        if (window.packageId <= 0)
+            return
+        window.detail = typeEngine.readFields(window.packageId)
+        window.detailTitle = window.detail.title || "untitled"
+    }
+
+    // 函数: 若当前展示的正是该包则刷新（供 AppDialogs 在编辑保存后调用）
+    // 输入: id —— 被编辑的包 id；输出: 无
+    function refreshIfCurrent(id) {
+        if (window.packageId === id)
+            window.refresh()
     }
 
     function openPackage(id) {
@@ -77,6 +96,22 @@ Window {
                         text: "元数据"
                         font.pixelSize: 15
                         font.bold: true
+                    }
+                    Rectangle {
+                        Layout.preferredWidth: 56
+                        Layout.preferredHeight: 26
+                        radius: 4
+                        color: "#86b2ff"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "编辑"
+                            color: "#ffffff"
+                            font.pixelSize: 12
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: window.editRequested(window.packageId)
+                        }
                     }
                     Rectangle {
                         Layout.preferredWidth: 56

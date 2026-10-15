@@ -18,6 +18,7 @@ set(CMAKE_AUTORCC ON)
 # ---- jarvis_core：全部核心逻辑（可执行与无头测试共用此静态库）----
 set (CORE_HEADERS
     core/app/Application.h
+    core/common/Logging.h
     core/creator/CreatorService.h
     core/events/EventBus.h
     core/import/ImportService.h
@@ -38,6 +39,7 @@ set (CORE_HEADERS
 add_library(jarvis_core STATIC
     ${CORE_HEADERS}
     core/app/Application.cpp
+    core/common/Logging.cpp
     core/types/TypePackage.cpp
     core/types/TypePackageManager.cpp
     core/events/EventBus.cpp
@@ -85,9 +87,12 @@ qt_add_qml_module(jarvis
         qml/include/WindowButton.qml
         qml/include/NavItem.qml
         qml/include/LeftBar.qml
+        qml/include/DateField.qml
         qml/include/AppDialogs.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/SettingsDialog.qml
+        qml/dialogs/FilterDialog.qml
+        qml/dialogs/EditPackageDialog.qml
         qml/windows/ViewerWindow.qml
         qml/windows/LibraryManagerWindow.qml
 )
@@ -97,14 +102,28 @@ target_link_libraries(jarvis PRIVATE jarvis_core)
 # 图标等通用图片资源：作为源加入 jarvis，由 AUTORCC 编译（按 qrc 内部 prefix/alias）
 target_sources(jarvis PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/images.qrc")
 
-# 开发期保留控制台输出；M5 打包时再置 TRUE
-set_target_properties(jarvis PROPERTIES WIN32_EXECUTABLE FALSE)
+# 控制台窗口：Debug 保留（便于开发期直接观察 stderr 回显与日志），其余配置置 TRUE（发布形态无控制台）
+set_target_properties(jarvis PROPERTIES WIN32_EXECUTABLE "$<NOT:$<CONFIG:Debug>>")
 
 # 构建后把类型包拷贝到产物目录，形成 <exe>/plugins/types/<form>/ 部署结构
 add_custom_command(TARGET jarvis POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_SOURCE_DIR}/plugins" "$<TARGET_FILE_DIR:jarvis>/plugins"
 )
+
+# ---- 部署：生成可直接拷走的绿色目录 ----
+# 用法：cmake --install <构建目录> --prefix <目标目录>（如 --prefix dist）
+# windeployqt 由生成的脚本在 install 阶段调用，收拢 Qt 运行库、平台插件与 QML 模块到 exe 同级；
+# 类型包随之落于 <目标目录>/plugins/types/<form>/，envs/ 在首次运行时于 exe 旁自建。
+install(TARGETS jarvis RUNTIME DESTINATION .)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/plugins" DESTINATION plugins)
+
+qt_generate_deploy_app_script(
+    TARGET jarvis
+    OUTPUT_SCRIPT jarvis_deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${jarvis_deploy_script})
 
 # ---- 无头冒烟测试（验收用；不依赖界面，直跑核心服务）----
 # 默认不构建：避免核心接口变动时未同步测试导致主构建链接失败。

@@ -1,11 +1,9 @@
 {
     "form": "draw",
     "displayName": "画作",
-    "version": 2,
+    "version": 3,
     "coreMinVersion": "0.1.0",
-    "fields": [
-        { "name": "creation_date", "type": "date", "label": "创作日期", "required": false }
-    ],
+    "fields": [],
     "packageLayout": { "kind": "imageSequence", "naming": "%03d" },
     "browseOrder": "sequence",
     "export": { "kind": "folder", "keepNames": true }

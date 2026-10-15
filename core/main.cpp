@@ -3,6 +3,8 @@
 #include <QQmlApplicationEngine>
 
 #include "app/Application.h"
+#include "common/Logging.h"
+#include "library/AppPaths.h"
 
 // 组合根：main.cpp 是唯一装配点 —— 创建核心服务、注入 QML 上下文。
 // QML 不自行构造数据模型（废弃 v1 的散点 qmlRegisterType）。
@@ -15,6 +17,9 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("Jarvis"));
     QCoreApplication::setApplicationVersion(QStringLiteral(JARVIS_CORE_VERSION));
+
+    // 日志最先安装：让后续所有初始化诊断（含类型包发现、库打开）都进入日志文件
+    Logging::install(AppPaths::defaultEnvsRoot());
 
     // 解析 --library <name>：指定本进程打开的库
     QCommandLineParser parser;

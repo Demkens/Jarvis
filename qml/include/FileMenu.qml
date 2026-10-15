@@ -21,7 +21,7 @@ Item {
         implicitWidth: fileLabel.implicitWidth + 20
         height: 26
         radius: 4
-        color: fileAreaMouse.containsMouse || menu.opened ? '#525c75' : "transparent"
+        color: fileAreaMouse.containsMouse || menu.opened ? '#b7cbff' : "transparent"
 
         Text {
             id: fileLabel

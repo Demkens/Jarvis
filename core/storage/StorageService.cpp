@@ -1,5 +1,6 @@
 #include "StorageService.h"
 
+#include <QDate>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -59,36 +60,8 @@ bool copyDirectoryRecursively(const QString &srcPath, const QString &destPath)
 
 bool StorageService::isValidCreationDate(const QString &date)
 {
-    const QString trimmed = date.trimmed();
-    if (trimmed.isEmpty())
-        return true; // 未知日期合法，落库为 NULL
-
-    const QStringList parts = trimmed.split(QLatin1Char('-'));
-    if (parts.size() < 1 || parts.size() > 3)
-        return false;
-    for (int i = 0; i < parts.size(); ++i) {
-        // 年 4 位；月、日 2 位
-        if (parts.at(i).size() != (i == 0 ? 4 : 2))
-            return false;
-        bool ok = false;
-        parts.at(i).toInt(&ok);
-        if (!ok)
-            return false;
-    }
-    const int year = parts.at(0).toInt();
-    if (year < 0 || year > 9999)
-        return false;
-    if (parts.size() >= 2) {
-        const int month = parts.at(1).toInt();
-        if (month < 1 || month > 12)
-            return false;
-    }
-    if (parts.size() == 3) {
-        const int day = parts.at(2).toInt();
-        if (day < 1 || day > 31)
-            return false;
-    }
-    return true;
+    // 精度固定：只接受 YYYY-MM-DD（拒绝 2021 / 2021-06 这类粗精度，也不再容忍空串）
+    return QDate::fromString(date.trimmed(), QStringLiteral("yyyy-MM-dd")).isValid();
 }
 
 StorageService::StorageService(AppPaths *paths, LibraryService *library, CreatorService *creators,
@@ -171,10 +144,14 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     else if (!QFileInfo(coverSource).isFile())
         return fail(AppError::Io, QStringLiteral("封面源文件不存在：%1").arg(coverSource));
 
-    const QString creationDate = plan.creationDate.trimmed();
-    if (!creationDate.isEmpty() && !isValidCreationDate(creationDate))
+    // 创作日期（v5 起为核心字段 file.creation_date）：格式固定 YYYY-MM-DD，导入必填；
+    // 向导已给默认值（当天），此处兜底，保证导入侧永不写空值
+    QString creationDate = plan.creationDate.trimmed();
+    if (creationDate.isEmpty())
+        creationDate = QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"));
+    else if (!isValidCreationDate(creationDate))
         return fail(AppError::Validation,
-                    QStringLiteral("创作日期格式须为 YYYY / YYYY-MM / YYYY-MM-DD：%1").arg(creationDate));
+                    QStringLiteral("创作日期格式须为 YYYY-MM-DD：%1").arg(creationDate));
 
     const QString title = plan.title.trimmed().isEmpty() ? QStringLiteral("untitled")
                                                          : plan.title.trimmed();
@@ -203,7 +180,9 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         return fail(AppError::Conflict, QStringLiteral("类型未在该库启用：%1").arg(plan.form));
     const qint64 typeId = typeRow.value(QStringLiteral("id")).toLongLong();
 
-    // 分表实际列（表名来自 type 表登记，仍以安全标识符校验兜底）
+    // 分表自有列数（表名来自 type 表登记，仍以安全标识符校验兜底）：
+    // only-id 的分表（如 draw 已把创作日期收归核心、创作者收归关联表）无需建行——分表退化为类型标记，
+    // 详情读取按「缺行即无类型字段」容忍；反之若仍有自有列，则先建 id 行，供后续 writeFields 更新
     AppError pragmaError;
     const QList<QVariantMap> columns = db.select(
         QStringLiteral("PRAGMA table_info(%1)").arg(plan.form), {}, &pragmaError);
@@ -211,15 +190,11 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         if (error != nullptr) *error = pragmaError;
         return -1;
     }
-    bool hasDateColumn = false;
+    int ownColumnCount = 0;
     for (const QVariantMap &column : columns) {
-        const QString name = column.value(QStringLiteral("name")).toString();
-        if (name == QStringLiteral("creation_date"))
-            hasDateColumn = true;
+        if (column.value(QStringLiteral("name")).toString() != QStringLiteral("id"))
+            ++ownColumnCount;
     }
-    if (!creationDate.isEmpty() && !hasDateColumn)
-        return fail(AppError::Conflict,
-                    QStringLiteral("类型 %1 的分表不支持创作日期字段").arg(plan.form));
 
     // ---- 2. 开事务：创作者解析与占位行随事务回滚 ----
     if (!db.transaction(error))
@@ -252,12 +227,13 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     qint64 id = 0;
     if (!db.execute(QStringLiteral(
                         "INSERT INTO file (title, type_id, score, size, storage_path, aspect_ratio, "
-                        "created_time, updated_time) "
-                        "VALUES (:title, :type_id, :score, 0, 0, :aspect, :now, :now)"),
+                        "creation_date, created_time, updated_time) "
+                        "VALUES (:title, :type_id, :score, 0, 0, :aspect, :creation_date, :now, :now)"),
                     {{QStringLiteral("title"), title},
                      {QStringLiteral("type_id"), typeId},
                      {QStringLiteral("score"), plan.score},
                      {QStringLiteral("aspect"), coverAspect},
+                     {QStringLiteral("creation_date"), creationDate},
                      {QStringLiteral("now"), now}},
                     &id, error)) {
         db.rollback();
@@ -303,17 +279,11 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     if (!generateCover(coverSource, targetCover, error))
         return abortImport(QStringLiteral("封面生成失败"));
 
-    // ---- 5. 写分表（creator 已独立到 file_creator 关联表，分表只保留类型自有字段）----
-    if (hasDateColumn) {
-        const QVariantMap params = {
-            {QStringLiteral("id"), id},
-            // 空日期存 NULL（未知）
-            {QStringLiteral("creation_date"),
-             creationDate.isEmpty() ? QVariant() : QVariant(creationDate)},
-        };
-        if (!db.execute(QStringLiteral("INSERT INTO %1 (id, creation_date) VALUES (:id, :creation_date)")
-                            .arg(plan.form),
-                        params, error))
+    // ---- 5. 分表行：仅当类型仍有自有字段时建 id 占位行（creator 已独立到 file_creator，
+    //         创作日期已升格到 file，分表只保留类型自有字段）----
+    if (ownColumnCount > 0) {
+        if (!db.execute(QStringLiteral("INSERT INTO %1 (id) VALUES (:id)").arg(plan.form),
+                        {{QStringLiteral("id"), id}}, error))
             return abortImport(QStringLiteral("分表写入失败"));
     }
 

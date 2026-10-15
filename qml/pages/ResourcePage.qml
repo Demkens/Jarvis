@@ -3,6 +3,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+import "../dialogs"
+
 Item {
     id: page
 
@@ -12,20 +14,37 @@ Item {
     // 打开详情窗口：DetailWindow 提升到 Main.qml 顶层（Window 不能挂在深层 Item 下，
     // 否则弹窗不可见——见 M4 右键"打开详情"无反应问题），此处只转发 id。
     signal openDetail(int packageId)
+    // 打开元数据编辑弹窗（本页只转发 id，实例与写库编排在 AppDialogs）
+    signal editPackage(int packageId)
 
     // 查询状态（JS 数组整体替换以触发模型刷新，避免 Qt 对原地 push 无通知的坑）
     property var viewItems: []
     property int totalCount: 0
     property int pageCount: 1
     property int currentPage: 1
-    property string currentForm: ""
+
+    // 筛选条件（唯一持有者即本页；维度由统一筛选弹窗 FilterDialog 编辑后回填）
+    property var filters: ({
+        form: "",
+        creationFrom: "",
+        creationTo: "",
+        createdFrom: "",
+        createdTo: ""
+    })
 
     // 重新查询当前页
     function reload() {
         if (!libraryService.currentName)
             return
-        var result = typeEngine.queryPackages(page.currentForm, searchField.text,
-                                              scopeCombo.currentIndex, page.currentPage)
+        var result = typeEngine.queryPackages({
+            form: page.filters.form,
+            keyword: searchField.text,
+            scope: scopeCombo.currentIndex,
+            creationFrom: page.filters.creationFrom,
+            creationTo: page.filters.creationTo,
+            createdFrom: page.filters.createdFrom,
+            createdTo: page.filters.createdTo
+        }, page.currentPage)
         if (!result.ok) {
             console.warn("[resource] 查询失败：" + (result.message || "未知错误"))
             return
@@ -96,12 +115,12 @@ Item {
         onTriggered: page.relayout()
     }
 
-    // 类型 ComboBox 模型：首位"全部类型" + 已启用类型（enabledTypes 变化自动重算）
+    // 类型下拉模型：首位"全部类型" + 已启用类型（enabledTypes 变化自动重算）
+    // 用途：注入统一筛选弹窗（FilterDialog）的类型维度
     readonly property var typeFilterModel: [{"form": "", "displayName": "全部类型"}].concat(typeEngine.enabledTypes)
 
     Component.onCompleted: {
         if (libraryService.currentName) page.reload()
-        if (typeCombo.count > 0) typeCombo.currentIndex = 0
     }
 
     Connections {
@@ -150,15 +169,23 @@ Item {
                 onTextChanged: searchTimer.restart()
             }
 
-            ComboBox {
-                id: typeCombo
-                Layout.preferredWidth: 150
-                model: page.typeFilterModel
-                textRole: "displayName"
-                onActivated: {
-                    page.currentForm = currentValue.form
-                    page.currentPage = 1
-                    page.reload()
+            // 统一筛选入口：类型 / 创作日期区间 / 入库时间区间（含二期标签树）集中在
+            // FilterDialog 内编辑，本按钮只负责唤起并回填结果
+            Rectangle {
+                id: filterButton
+                Layout.preferredWidth: 76
+                Layout.preferredHeight: 32
+                radius: 4
+                color: "#86b2ff"
+                Text {
+                    anchors.centerIn: parent
+                    text: "筛选"
+                    color: "#ffffff"
+                    font.pixelSize: 13
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: filterDialog.openWith(page.filters)
                 }
             }
         }
@@ -432,6 +459,13 @@ Item {
             }
         }
         MenuItem {
+            text: "编辑元数据…"
+            onTriggered: {
+                if (contextMenu.currentItem)
+                    page.editPackage(Number(contextMenu.currentItem.id))
+            }
+        }
+        MenuItem {
             text: "删除"
             onTriggered: {
                 if (!contextMenu.currentItem)
@@ -526,5 +560,16 @@ Item {
             pages.push(0)
         pages.push(total)
         return pages
+    }
+
+    // 统一筛选弹窗：筛选状态由本页持有（page.filters），弹窗只负责编辑与回填
+    FilterDialog {
+        id: filterDialog
+        typeModel: page.typeFilterModel
+        onApplied: function (filters) {
+            page.filters = filters
+            page.currentPage = 1
+            page.reload()
+        }
     }
 }

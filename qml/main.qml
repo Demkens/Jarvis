@@ -75,6 +75,7 @@ Item {
                         Layout.fillHeight: true
                         onOpenViewer: function (id) { dialogs.openViewer(id) }
                         onOpenDetail: function (id) { dialogs.openDetail(id) }
+                        onEditPackage: function (id) { dialogs.openEditPackage(id) }
                         onExportPackage: function (id) { dialogs.openExport(id) }
                     }
                     StatisticsPage {

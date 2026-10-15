@@ -17,7 +17,7 @@ Rectangle {
 
     Layout.fillWidth: true
     Layout.preferredHeight: 44
-    color: navItem.active ? "#1e2634" : "transparent"
+    color: navItem.active ? '#86b2ff' : "transparent"
 
     // 左侧选中指示条
     Rectangle {

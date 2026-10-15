@@ -40,7 +40,7 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
                 height: 26
                 radius: 4
-                color: libAreaMouse.containsMouse ? '#525c75' : "transparent"
+                color: libAreaMouse.containsMouse ? '#a7bcf2' : "transparent"
                 implicitWidth: libRow.implicitWidth + 20
 
                 // 库管理区文本部分

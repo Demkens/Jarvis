@@ -144,17 +144,25 @@ QVariantList TypeEngine::enrichRows(QVariantList rows) const
     return rows;
 }
 
-QVariantMap TypeEngine::queryPackages(const QString &form, const QString &keyword, int scope,
-                                      int page)
+QVariantMap TypeEngine::queryPackages(const QVariantMap &filters, int page)
 {
+    // QML 只提交「有值的条件」；这里逐一取用并做空值兜底（缺键=该维度不限）
+    PackageService::QueryFilters query;
+    query.form = filters.value(QStringLiteral("form")).toString();
+    query.keyword = filters.value(QStringLiteral("keyword")).toString();
+    query.scope = filters.value(QStringLiteral("scope")).toInt();
+    query.creationFrom = filters.value(QStringLiteral("creationFrom")).toString();
+    query.creationTo = filters.value(QStringLiteral("creationTo")).toString();
+    query.createdFrom = filters.value(QStringLiteral("createdFrom")).toString();
+    query.createdTo = filters.value(QStringLiteral("createdTo")).toString();
+
     const int pageSize = m_settings->pageSize(); // M5 全局设置"每页数量"
     const int pageNum = qMax(1, page);
     const int offset = (pageNum - 1) * pageSize;
 
     AppError error;
     int total = 0;
-    QVariantList rows =
-        m_packageService->queryPackages(form, keyword, scope, offset, pageSize, &total, &error);
+    QVariantList rows = m_packageService->queryPackages(query, offset, pageSize, &total, &error);
     if (!error.ok())
         return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
 
@@ -203,6 +211,14 @@ QVariantMap TypeEngine::ratePackage(qint64 fileId, int score)
 {
     AppError error;
     if (m_packageService->ratePackage(fileId, score, &error))
+        return {{QStringLiteral("ok"), true}};
+    return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+}
+
+QVariantMap TypeEngine::updateCreationDate(qint64 fileId, const QString &date)
+{
+    AppError error;
+    if (m_packageService->updateCreationDate(fileId, date, &error))
         return {{QStringLiteral("ok"), true}};
     return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
 }
@@ -330,14 +346,15 @@ QVariantMap TypeEngine::writeFields(qint64 fileId, const QVariantMap &values)
         QVariant stored = it.value();
 
         if (declaredType == QStringLiteral("date")) {
-            // 空串 → NULL（未知日期）；非空须满足 YYYY / YYYY-MM / YYYY-MM-DD
+            // 空串 → NULL（未设置）；非空须为严格 YYYY-MM-DD（v5 起统一精度）
             const QString text = stored.toString().trimmed();
-            if (!StorageService::isValidCreationDate(text))
+            if (text.isEmpty()) {
+                stored = QVariant();
+            } else if (!StorageService::isValidCreationDate(text)) {
                 return {{QStringLiteral("ok"), false},
                         {QStringLiteral("message"),
-                         QStringLiteral("创作日期格式须为 YYYY / YYYY-MM / YYYY-MM-DD：%1").arg(text)}};
-            if (text.isEmpty())
-                stored = QVariant();
+                         QStringLiteral("日期格式须为 YYYY-MM-DD：%1").arg(text)}};
+            }
         }
 
         setClauses.append(QStringLiteral("%1 = :%1").arg(name));

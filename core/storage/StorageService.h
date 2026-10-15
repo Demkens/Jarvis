@@ -17,7 +17,7 @@ struct ImportPlan
     QString form;            // 目标类型 form（分表名）
     QString title;           // 标题；空则落库为 'untitled'
     QString creatorName;     // 创作者名；空 → 「佚名」，经 CreatorService find-or-create
-    QString creationDate;    // 创作日期 TEXT：YYYY / YYYY-MM / YYYY-MM-DD；空 → NULL
+    QString creationDate;    // 创作日期 TEXT：严格 YYYY-MM-DD；空 → 落库取当天兜底
     int score = 0;           // 初始评分 0–100；0 = 未评分
     QStringList files;       // 有序源文件绝对路径，顺序即包内序号（001.ext…）
     QString coverSourcePath; // 封面来源文件；空 → 取 files 首个
@@ -43,7 +43,7 @@ public:
     // 分表名只允许安全标识符（会被拼进 SQL）
     static bool isSafeFormName(const QString &form);
 
-    // 创作日期：YYYY / YYYY-MM / YYYY-MM-DD（开发文档 6.1），空串也算合法（未知 → NULL）
+    // 创作日期：严格 YYYY-MM-DD（v5 起升格为核心字段 file.creation_date，精度固定、导入必填）
     static bool isValidCreationDate(const QString &date);
 
     // 相对片段 → 绝对路径（开发文档 5.6：db 只存相对片段，路径由核心拼接）

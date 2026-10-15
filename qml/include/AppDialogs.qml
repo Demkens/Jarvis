@@ -23,6 +23,8 @@ Item {
     function openViewer(id) { viewerWindow.openPackage(id) }
     // 详情窗口：与 ViewerWindow 同级顶层实例化（Window 挂在深层 Item 下会弹不出）
     function openDetail(id) { detailWindow.openPackage(id) }
+    // 元数据编辑弹窗（资源页右键、详情窗口「编辑」按钮两处入口）
+    function openEditPackage(id) { editDialog.openFor(id) }
     function openExport(id) {
         _exportTargetId = id
         exportFolderPicker.open()
@@ -49,6 +51,14 @@ Item {
 
     DetailWindow {
         id: detailWindow
+        onEditRequested: function (id) { appDialogs.openEditPackage(id) }
+    }
+
+    EditPackageDialog {
+        id: editDialog
+        // 保存成功后：详情窗口若正展示该包则重读；资源列表由 PackageUpdated → TypeEngine.packagesChanged 自动刷新
+        onSaved: function (id) { detailWindow.refreshIfCurrent(id) }
+        onFailed: function (message) { console.warn("[edit] " + message) }
     }
 
     // 导出目标：选择空文件夹后原样复原包文件（开发文档 5.6）

@@ -1,5 +1,7 @@
 #include "PackageService.h"
 
+#include <QDate>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -95,22 +97,21 @@ QVariantList PackageService::listPackages(const QString &form, AppError *error) 
     return list;
 }
 
-QVariantList PackageService::queryPackages(const QString &form, const QString &keyword, int scope,
-                                           int offset, int limit, int *total,
-                                           AppError *error) const
+QVariantList PackageService::queryPackages(const QueryFilters &filters, int offset, int limit,
+                                           int *total, AppError *error) const
 {
-    // WHERE 片段与参数（参数化防注入）：form 空=全部类型，keyword 空=不过滤
+    // WHERE 片段与参数（参数化防注入）：各条件为空即不生效
     QString where = QStringLiteral("1=1");
     QVariantMap params;
-    if (!form.isEmpty()) {
+    if (!filters.form.isEmpty()) {
         where += QStringLiteral(" AND t.form = :form");
-        params.insert(QStringLiteral("form"), form);
+        params.insert(QStringLiteral("form"), filters.form);
     }
-    const QString kw = keyword.trimmed();
+    const QString kw = filters.keyword.trimmed();
     if (!kw.isEmpty()) {
         // 通配符按字面匹配：转义 \ % _ 后两侧补 %，配合 ESCAPE '\'
         const QString pattern = QLatin1Char('%') + escapeLike(kw) + QLatin1Char('%');
-        if (scope == SearchCreator) {
+        if (filters.scope == SearchCreator) {
             // 创作者范围：命中任一关联创作者的正式名或别名；
             // EXISTS 避免多创作者/多别名导致同一 file 重复行
             // （:kw_name / :kw_alias 用不同名，避免同一命名占位符重复绑定的兼容性问题）
@@ -124,6 +125,39 @@ QVariantList PackageService::queryPackages(const QString &form, const QString &k
             where += QStringLiteral(" AND f.title LIKE :kw_title ESCAPE '\\'");
             params.insert(QStringLiteral("kw_title"), pattern);
         }
+    }
+
+    // 创作日期区间（file.creation_date 固定 YYYY-MM-DD，字符串可直接比较，闭区间）
+    const QString creationFrom = filters.creationFrom.trimmed();
+    if (!creationFrom.isEmpty()) {
+        where += QStringLiteral(" AND f.creation_date >= :creation_from");
+        params.insert(QStringLiteral("creation_from"), creationFrom);
+    }
+    const QString creationTo = filters.creationTo.trimmed();
+    if (!creationTo.isEmpty()) {
+        where += QStringLiteral(" AND f.creation_date <= :creation_to");
+        params.insert(QStringLiteral("creation_to"), creationTo);
+    }
+
+    // 入库时间区间（file.created_time 为 UTC ISO-8601）：UI 给的是本地日期，
+    // 换算成 UTC 时刻后用半开区间 [from 当日 00:00, to 次日 00:00) 比较，
+    // 避免「按本地日期筛却按 UTC 日期截断」造成的跨时区漏检。
+    // 格式固定且补零，故字符串比较与时刻比较等价。
+    const QDate createdFrom = QDate::fromString(filters.createdFrom.trimmed(),
+                                                QStringLiteral("yyyy-MM-dd"));
+    if (createdFrom.isValid()) {
+        // startOfDay() 按本地时区解释（含 DST 正确处理），再换算 UTC
+        const QString bound = createdFrom.startOfDay().toUTC().toString(Qt::ISODate);
+        where += QStringLiteral(" AND f.created_time >= :created_from");
+        params.insert(QStringLiteral("created_from"), bound);
+    }
+    const QDate createdTo = QDate::fromString(filters.createdTo.trimmed(),
+                                              QStringLiteral("yyyy-MM-dd"));
+    if (createdTo.isValid()) {
+        // 上界取次日零时（半开区间），使「结束日当天入库」全部命中
+        const QString bound = createdTo.addDays(1).startOfDay().toUTC().toString(Qt::ISODate);
+        where += QStringLiteral(" AND f.created_time < :created_to");
+        params.insert(QStringLiteral("created_to"), bound);
     }
 
     AppError local;
@@ -144,7 +178,7 @@ QVariantList PackageService::queryPackages(const QString &form, const QString &k
     params.insert(QStringLiteral("offset"), qMax(0, offset));
     const QList<QVariantMap> rows = db.select(
         QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, f.aspect_ratio, "
-                       "f.created_time, f.updated_time, t.form AS type_form "
+                       "f.creation_date, f.created_time, f.updated_time, t.form AS type_form "
                        "FROM file f JOIN type t ON t.id = f.type_id WHERE %1 "
                        "ORDER BY f.id LIMIT :limit OFFSET :offset").arg(where),
         params, &local);
@@ -251,6 +285,41 @@ bool PackageService::updateTitle(qint64 id, const QString &title, AppError *erro
                      {QStringLiteral("now"), isoNowUtc()},
                      {QStringLiteral("id"), id}},
                     error))
+        return false;
+
+    emit m_events->packageUpdated(id);
+    return true;
+}
+
+bool PackageService::updateCreationDate(qint64 id, const QString &date, AppError *error)
+{
+    const QString trimmed = date.trimmed();
+    // 必填且精度固定：空串/非法格式一律拒绝（与导入侧同一套校验）
+    if (!StorageService::isValidCreationDate(trimmed)) {
+        setOut(error, AppError::Validation,
+               trimmed.isEmpty() ? QStringLiteral("创作日期不能为空")
+                                 : QStringLiteral("创作日期格式须为 YYYY-MM-DD：%1").arg(trimmed));
+        return false;
+    }
+
+    AppError local;
+    DbAccess &db = m_library->dbAccess();
+    QVariantMap row;
+    const bool found = db.selectOne(QStringLiteral("SELECT id FROM file WHERE id = :id"),
+                                    {{QStringLiteral("id"), id}}, row, &local);
+    if (failed(local, error))
+        return false;
+    if (!found) {
+        setOut(error, AppError::Validation, QStringLiteral("数据包不存在：#%1").arg(id));
+        return false;
+    }
+
+    if (!db.execute(
+            QStringLiteral("UPDATE file SET creation_date = :date, updated_time = :now WHERE id = :id"),
+            {{QStringLiteral("date"), trimmed},
+             {QStringLiteral("now"), isoNowUtc()},
+             {QStringLiteral("id"), id}},
+            error))
         return false;
 
     emit m_events->packageUpdated(id);

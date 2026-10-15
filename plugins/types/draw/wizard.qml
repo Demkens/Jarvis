@@ -42,6 +42,9 @@ Item {
     implicitWidth: 760
     implicitHeight: 520
 
+    // 创作日期为必填项：首次进入即预填当天，避免用户未选日期就提交而报错
+    Component.onCompleted: if (dateField.text === "") dateField.text = today()
+
     // ---- 路径与格式化工具函数 ----
 
     // 函数: file:/// URL → 真实本地路径（FileDialog / DropArea 产出皆为 URL）
@@ -163,7 +166,7 @@ Item {
         files = valid
         titleField.text = baseName(valid[0])    // 默认标题取首图主名
         creatorField.text = ""                  // 留空 → 核心落「佚名」
-        dateField.text = ""                     // 留空 → 核心落 NULL
+        dateField.text = today()                // 必填，默认当天（格式固定 YYYY-MM-DD）
         scoreSpin.value = 0                     // 0 = 未评分
         refreshPreview()
         titleField.forceActiveFocus()           // 表单习惯：进入即可直接打字
@@ -178,7 +181,7 @@ Item {
         previewDate = ""
         titleField.text = ""
         creatorField.text = ""
-        dateField.text = ""
+        dateField.text = today()                // 必填项复位为当天，不置空
         scoreSpin.value = 0
     }
 
@@ -187,6 +190,11 @@ Item {
     function submit() {
         if (!ready)
             return
+        // 创作日期必填（默认已填当天，此处防御用户清空后提交）
+        if (dateField.text.trim() === "") {
+            page.importFailed("创作日期为必填项，请选择日期")
+            return
+        }
         var plan = {
             title: titleField.text.trim(),
             creatorName: creatorField.text.trim(),
@@ -371,7 +379,7 @@ Item {
 
             Item { Layout.preferredHeight: 6 }
 
-            Label { text: "创作日期"; font.pixelSize: 12 }
+            Label { text: "创作日期（必填）"; font.pixelSize: 12 }
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8

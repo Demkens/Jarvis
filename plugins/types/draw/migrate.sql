@@ -27,3 +27,17 @@ CREATE TABLE draw (
 );
 INSERT INTO draw (id, creation_date) SELECT id, creation_date FROM draw_old;
 DROP TABLE draw_old;
+
+-- @version 3
+-- 创作日期升格为核心字段：核心 v5 已新增 file.creation_date 并从本表 creation_date 回填存量
+-- （库打开顺序为「核心迁移 → 类型迁移」，故此处重建时回填已完成）。
+-- 创作者已收归 file_creator、创作日期已收归 file，本表不再持有任何类型自有字段，
+-- 仅保留 id 主键作为「类型标记」（分表行按需建立；核心读取按「缺行即无类型字段」容忍）。
+-- SQLite 禁止直接 DROP 被外键引用的列，故整表重建。
+ALTER TABLE draw RENAME TO draw_old;
+CREATE TABLE draw (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY (id) REFERENCES file(id) ON DELETE CASCADE
+);
+INSERT INTO draw (id) SELECT id FROM draw_old;
+DROP TABLE draw_old;

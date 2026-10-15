@@ -91,7 +91,105 @@ const QStringList kCoreV4Statements = {
     QStringLiteral("ALTER TABLE file ADD COLUMN aspect_ratio REAL NOT NULL DEFAULT 0"),
 };
 
+// 核心 v5：创作日期升格为核心字段 file.creation_date（约定变更）
+// 背景：早期按「类型定性数据」把它放在各类型分表的同名列，导致跨类型按创作日期筛选
+// 必须动态拼分表子查询、且精度（YYYY / YYYY-MM / YYYY-MM-DD）与可空性不统一；
+// 现统一收归 file 表一列，精度固定 YYYY-MM-DD；分表旧列由各类型包 migrate.sql 自行清理。
+const QStringList kCoreV5Statements = {
+    QStringLiteral("ALTER TABLE file ADD COLUMN creation_date TEXT NOT NULL DEFAULT ''"),
+};
+
 } // namespace
+
+// 拼进 SQL 的表名只接受安全标识符；与 StorageService::isSafeFormName 同规则，
+// 此处独立实现以免 schema 层反向依赖 storage 层。
+static bool isSafeIdentifier(const QString &name)
+{
+    if (name.isEmpty() || name.size() > 64)
+        return false;
+    if (!name.at(0).isLower() || !name.at(0).isLetter())
+        return false;
+    for (const QChar ch : name) {
+        if (ch.isLetter() && !ch.isLower())
+            return false;
+        if (!ch.isLetterOrNumber() && ch != QLatin1Char('_'))
+            return false;
+    }
+    return true;
+}
+
+bool SchemaManager::applyCoreV5(DbAccess &db, AppError *error)
+{
+    // 1) 加列（默认空串：存量行在下面第 2、3 步回填）
+    for (const QString &statement : kCoreV5Statements) {
+        if (!db.executeRawStatements(statement, error))
+            return false;
+    }
+
+    // 2) 分表回填：早期创作日期住在各类型分表的 creation_date 列，精度不一，
+    //    统一归一到 YYYY-MM-DD（年补 -01-01，月补 -01）
+    AppError local;
+    const QList<QVariantMap> typeRows =
+        db.select(QStringLiteral("SELECT form FROM type"), {}, &local);
+    if (!local.ok()) {
+        if (error != nullptr)
+            *error = local;
+        return false;
+    }
+
+    for (const QVariantMap &typeRow : typeRows) {
+        const QString form = typeRow.value(QStringLiteral("form")).toString();
+        if (!isSafeIdentifier(form))
+            continue;
+
+        const int exists =
+            db.scalar(QStringLiteral("SELECT count(*) FROM sqlite_master "
+                                     "WHERE type = 'table' AND name = :n"),
+                      {{QStringLiteral("n"), form}}, &local)
+                .toInt();
+        if (!local.ok()) {
+            if (error != nullptr)
+                *error = local;
+            return false;
+        }
+        if (exists != 1)
+            continue;
+
+        // 分表未必含同名列（类型包可能已自行清理或本就没有）
+        bool hasDateColumn = false;
+        const QList<QVariantMap> columns =
+            db.select(QStringLiteral("PRAGMA table_info(%1)").arg(form), {}, &local);
+        if (!local.ok()) {
+            if (error != nullptr)
+                *error = local;
+            return false;
+        }
+        for (const QVariantMap &column : columns) {
+            if (column.value(QStringLiteral("name")).toString() == QStringLiteral("creation_date"))
+                hasDateColumn = true;
+        }
+        if (!hasDateColumn)
+            continue;
+
+        const QString sql =
+            QStringLiteral("UPDATE file SET creation_date = "
+                           "(SELECT CASE length(d.creation_date) "
+                           "         WHEN 4 THEN d.creation_date || '-01-01' "
+                           "         WHEN 7 THEN d.creation_date || '-01' "
+                           "         ELSE d.creation_date END "
+                           " FROM %1 d WHERE d.id = file.id) "
+                           "WHERE creation_date = '' AND id IN "
+                           "(SELECT id FROM %1 WHERE creation_date IS NOT NULL AND creation_date <> '')")
+                .arg(form);
+        if (!db.execute(sql, {}, error))
+            return false;
+    }
+
+    // 3) 兜底：分表无同名列、或分表日期为空的行，用入库日期（created_time 的日期部分）
+    return db.execute(QStringLiteral("UPDATE file SET creation_date = substr(created_time, 1, 10) "
+                                     "WHERE creation_date = ''"),
+                      {}, error);
+}
 
 bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
 {
@@ -103,25 +201,35 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
         return false;
 
     for (int version = currentVersion + 1; version <= kCoreSchemaVersion; ++version) {
-        const QStringList *statements = nullptr;
-        if (version == 1)
-            statements = &kCoreV1Statements;
-        else if (version == 2)
-            statements = &kCoreV2Statements;
-        else if (version == 3)
-            statements = &kCoreV3Statements;
-        else if (version == 4)
-            statements = &kCoreV4Statements;
-
-        if (statements == nullptr)
-            continue;
-
-        for (const QString &statement : *statements) {
-            if (!db.executeRawStatements(statement, error)) {
+        if (version == 5) {
+            // v5 需按 type 表登记的分表名动态拼接，无法写成静态语句列表，改由代码迁移
+            if (!applyCoreV5(db, error)) {
                 db.rollback();
                 return false;
             }
+        } else {
+            const QStringList *statements = nullptr;
+            if (version == 1)
+                statements = &kCoreV1Statements;
+            else if (version == 2)
+                statements = &kCoreV2Statements;
+            else if (version == 3)
+                statements = &kCoreV3Statements;
+            else if (version == 4)
+                statements = &kCoreV4Statements;
+
+            // 未登记的版本：不推进 user_version（避免静默跳过迁移），下次启动重试
+            if (statements == nullptr)
+                continue;
+
+            for (const QString &statement : *statements) {
+                if (!db.executeRawStatements(statement, error)) {
+                    db.rollback();
+                    return false;
+                }
+            }
         }
+
         if (!db.execute(QStringLiteral("PRAGMA user_version = %1").arg(version), {}, error)) {
             db.rollback();
             return false;

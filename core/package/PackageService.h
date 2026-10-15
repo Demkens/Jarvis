@@ -33,18 +33,36 @@ public:
         SearchCreator = 1,
     };
 
-    // 带条件分页查询（M4 资源页）：
-    // form 空=全部类型；keyword 空=不过滤（否则按 scope 匹配标题或创作者，LIKE 通配符已转义、
-    // 参数化防注入）；offset/limit 决定当前页；total 输出总行数（供分页计数，可传空忽略）。
-    QVariantList queryPackages(const QString &form, const QString &keyword, int scope,
-                               int offset, int limit, int *total, AppError *error = nullptr) const;
+    // 带条件分页查询的条件集合（M4 资源页 → M5 统一筛选弹窗）：
+    // form 空=全部类型；keyword 空=不搜索；scope 决定 keyword 匹配标题还是创作者；
+    // creationFrom/To：创作日期闭区间（file.creation_date，YYYY-MM-DD，空=不限）；
+    // createdFrom/To：入库时间闭区间（UI 传本地日期 YYYY-MM-DD，内部换算为 UTC 时刻比较，空=不限）。
+    struct QueryFilters
+    {
+        QString form;
+        QString keyword;
+        int scope = SearchTitle;
+        QString creationFrom;
+        QString creationTo;
+        QString createdFrom;
+        QString createdTo;
+    };
 
-    // 单包详情：file 行 + type_form + 分表字段合并（如 draw 的 creation_date）
+    // 带条件分页查询（M4 资源页）：
+    // filters 见 QueryFilters；offset/limit 决定当前页；total 输出总行数（供分页计数，可传空忽略）。
+    QVariantList queryPackages(const QueryFilters &filters, int offset, int limit, int *total,
+                               AppError *error = nullptr) const;
+
+    // 单包详情：file 行（含核心列 creation_date）+ type_form + 分表自有字段合并
     // + 创作者多对多（creatorName=主要创作者 / creators=全列表 / creatorCount=数量）
     QVariantMap packageDetail(qint64 id, AppError *error = nullptr) const;
 
     // ---- 修改 ----
     bool updateTitle(qint64 id, const QString &title, AppError *error = nullptr);
+
+    // 创作日期（核心列 file.creation_date，格式固定 YYYY-MM-DD）：空串或非法格式返回 Validation 错误；
+    // 成功后广播 PackageUpdated。
+    bool updateCreationDate(qint64 id, const QString &date, AppError *error = nullptr);
 
     // 评分（开发文档 6.9）：首评直接生效；再评 score = round(旧×(1-w) + 新×w)；
     // 0 = 清除评分。触发 PackageUpdated。
