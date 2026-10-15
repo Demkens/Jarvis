@@ -24,12 +24,15 @@ Item {
     property int currentPage: 1
 
     // 筛选条件（唯一持有者即本页；维度由统一筛选弹窗 FilterDialog 编辑后回填）
+    // tagIds：标签筛选（空=不限）；tagMatchAll：多标签组合，false=OR / true=AND
     property var filters: ({
         form: "",
         creationFrom: "",
         creationTo: "",
         createdFrom: "",
-        createdTo: ""
+        createdTo: "",
+        tagIds: [],
+        tagMatchAll: false
     })
 
     // 重新查询当前页
@@ -43,7 +46,9 @@ Item {
             creationFrom: page.filters.creationFrom,
             creationTo: page.filters.creationTo,
             createdFrom: page.filters.createdFrom,
-            createdTo: page.filters.createdTo
+            createdTo: page.filters.createdTo,
+            tagIds: page.filters.tagIds || [],
+            tagMatchAll: !!page.filters.tagMatchAll
         }, page.currentPage)
         if (!result.ok) {
             console.warn("[resource] 查询失败：" + (result.message || "未知错误"))

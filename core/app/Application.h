@@ -13,6 +13,7 @@ class PackageService;
 class LibraryService;
 class SettingsService;
 class StorageService;
+class TagService;
 class TypeEngine;
 class TypePackageManager;
 
@@ -41,6 +42,7 @@ private:
     std::unique_ptr<StorageService> m_storage;
     std::unique_ptr<PackageService> m_packages;
     std::unique_ptr<ImportService> m_import;
+    std::unique_ptr<TagService> m_tags;
     std::unique_ptr<SettingsService> m_settings;
     std::unique_ptr<TypeEngine> m_typeEngine;
 };

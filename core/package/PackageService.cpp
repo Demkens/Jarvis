@@ -160,14 +160,48 @@ QVariantList PackageService::queryPackages(const QueryFilters &filters, int offs
         params.insert(QStringLiteral("created_to"), bound);
     }
 
+    // 标签筛选（M6）：命中语义为「打了该标签或其全部子孙」——用递归 CTE 把选中的每个
+    // 根标签展开为整棵子树（tagtree.root 记录它属于哪个选中标签）。
+    // OR：任一选中标签的子树命中即通过；AND：对每个选中标签各出一条 IN 条件并列。
+    QString ctePrefix;
+    if (!filters.tagIds.isEmpty()) {
+        QStringList rootParams;
+        for (int i = 0; i < filters.tagIds.size(); ++i) {
+            const QString key = QStringLiteral("tag_root_%1").arg(i);
+            rootParams.append(QLatin1Char(':') + key);
+            params.insert(key, filters.tagIds.at(i));
+        }
+        ctePrefix = QStringLiteral("WITH RECURSIVE tagtree(root, id) AS ("
+                                   "SELECT id, id FROM tag WHERE id IN (%1) "
+                                   "UNION SELECT tagtree.root, t.id FROM tag t "
+                                   "JOIN tagtree ON t.parent_id = tagtree.id) ")
+                        .arg(rootParams.join(QStringLiteral(", ")));
+
+        if (filters.tagMatchAll) {
+            // 同一取值在 CTE 与条件里各占一个占位符时须用不同名（Qt 命名占位符不保证同名复用）
+            for (int i = 0; i < filters.tagIds.size(); ++i) {
+                const QString key = QStringLiteral("tag_all_%1").arg(i);
+                params.insert(key, filters.tagIds.at(i));
+                where += QStringLiteral(
+                             " AND f.id IN (SELECT ft.file_id FROM file_tag ft "
+                             "JOIN tagtree tt ON tt.id = ft.tag_id WHERE tt.root = :%1)").arg(key);
+            }
+        } else {
+            where += QStringLiteral(
+                " AND f.id IN (SELECT file_id FROM file_tag "
+                "WHERE tag_id IN (SELECT id FROM tagtree))");
+        }
+    }
+
     AppError local;
     DbAccess &db = m_library->dbAccess();
 
     // 总数（分页计数），失败即返回
     if (total != nullptr) {
         *total = db.scalar(
-            QStringLiteral("SELECT COUNT(*) FROM file f JOIN type t ON t.id = f.type_id "
-                           "WHERE %1").arg(where),
+            ctePrefix
+                + QStringLiteral("SELECT COUNT(*) FROM file f JOIN type t ON t.id = f.type_id "
+                                 "WHERE %1").arg(where),
             params, &local).toInt();
         if (failed(local, error))
             return {};
@@ -177,10 +211,12 @@ QVariantList PackageService::queryPackages(const QueryFilters &filters, int offs
     params.insert(QStringLiteral("limit"), qMax(0, limit));
     params.insert(QStringLiteral("offset"), qMax(0, offset));
     const QList<QVariantMap> rows = db.select(
-        QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, f.aspect_ratio, "
-                       "f.creation_date, f.created_time, f.updated_time, t.form AS type_form "
-                       "FROM file f JOIN type t ON t.id = f.type_id WHERE %1 "
-                       "ORDER BY f.id LIMIT :limit OFFSET :offset").arg(where),
+        ctePrefix
+            + QStringLiteral("SELECT f.id, f.title, f.score, f.size, f.storage_path, "
+                             "f.aspect_ratio, f.creation_date, f.created_time, f.updated_time, "
+                             "t.form AS type_form "
+                             "FROM file f JOIN type t ON t.id = f.type_id WHERE %1 "
+                             "ORDER BY f.id LIMIT :limit OFFSET :offset").arg(where),
         params, &local);
     if (failed(local, error))
         return {};

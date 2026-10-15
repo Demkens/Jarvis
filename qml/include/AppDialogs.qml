@@ -31,6 +31,8 @@ Item {
     }
     // 设置弹窗（顶栏设置按钮 → Main → 此处）
     function openSettings() { settingsDialog.open() }
+    // 标签管理弹窗（顶栏「工具 → 标签管理…」→ Main → 此处）
+    function openTagManager() { tagManagerDialog.openManager() }
     // 导入弹窗直达指定步骤（文件菜单选定类型后 → Main → 此处）
     function startImport(form, channel) { importDialog.start(form, channel) }
 
@@ -59,6 +61,11 @@ Item {
         // 保存成功后：详情窗口若正展示该包则重读；资源列表由 PackageUpdated → TypeEngine.packagesChanged 自动刷新
         onSaved: function (id) { detailWindow.refreshIfCurrent(id) }
         onFailed: function (message) { console.warn("[edit] " + message) }
+    }
+
+    // 标签管理（全库共享标签树的维护入口）
+    TagManagerDialog {
+        id: tagManagerDialog
     }
 
     // 导出目标：选择空文件夹后原样复原包文件（开发文档 5.6）

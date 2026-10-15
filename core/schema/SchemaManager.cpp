@@ -99,6 +99,35 @@ const QStringList kCoreV5Statements = {
     QStringLiteral("ALTER TABLE file ADD COLUMN creation_date TEXT NOT NULL DEFAULT ''"),
 };
 
+// 核心 v6：标签体系（开发文档 6.7）——树状单父标签表 tag + 包级多对多关联表 file_tag。
+// 顶级标签 parent_id 为 NULL；因 SQLite 中 NULL != NULL，一个索引无法同时约束
+// 「顶级同名」与「同层同名」，故拆成两条部分唯一索引分别覆盖两种情形。
+// 说明：本列表中 STATEMENT 内不得出现行内注释（executeRawStatements 按 ';' 切分）。
+const QStringList kCoreV6Statements = {
+    QStringLiteral(R"(
+        CREATE TABLE IF NOT EXISTS tag (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            name      TEXT    NOT NULL,
+            parent_id INTEGER,
+            CHECK (parent_id IS NULL OR parent_id != id),
+            FOREIGN KEY (parent_id) REFERENCES tag(id) ON DELETE CASCADE
+        ))"),
+    QStringLiteral("CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_root_name "
+                   "ON tag(name) WHERE parent_id IS NULL"),
+    QStringLiteral("CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_child_name "
+                   "ON tag(parent_id, name) WHERE parent_id IS NOT NULL"),
+    QStringLiteral(R"(
+        CREATE TABLE IF NOT EXISTS file_tag (
+            file_id INTEGER NOT NULL,
+            tag_id  INTEGER NOT NULL,
+            PRIMARY KEY (file_id, tag_id),
+            FOREIGN KEY (file_id) REFERENCES file(id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id)  REFERENCES tag(id)  ON DELETE CASCADE
+        ))"),
+    // 按标签反查数据包（筛选/统计用）时避免全表扫描
+    QStringLiteral("CREATE INDEX IF NOT EXISTS idx_file_tag_tag ON file_tag(tag_id)"),
+};
+
 } // namespace
 
 // 拼进 SQL 的表名只接受安全标识符；与 StorageService::isSafeFormName 同规则，
@@ -217,6 +246,8 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
                 statements = &kCoreV3Statements;
             else if (version == 4)
                 statements = &kCoreV4Statements;
+            else if (version == 6)
+                statements = &kCoreV6Statements;
 
             // 未登记的版本：不推进 user_version（避免静默跳过迁移），下次启动重试
             if (statements == nullptr)

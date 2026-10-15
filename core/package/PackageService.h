@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QString>
 #include <QVariantList>
 
@@ -33,10 +34,12 @@ public:
         SearchCreator = 1,
     };
 
-    // 带条件分页查询的条件集合（M4 资源页 → M5 统一筛选弹窗）：
+    // 带条件分页查询的条件集合（M4 资源页 → M5 统一筛选弹窗 → M6 标签筛选）：
     // form 空=全部类型；keyword 空=不搜索；scope 决定 keyword 匹配标题还是创作者；
     // creationFrom/To：创作日期闭区间（file.creation_date，YYYY-MM-DD，空=不限）；
-    // createdFrom/To：入库时间闭区间（UI 传本地日期 YYYY-MM-DD，内部换算为 UTC 时刻比较，空=不限）。
+    // createdFrom/To：入库时间闭区间（UI 传本地日期 YYYY-MM-DD，内部换算为 UTC 时刻比较，空=不限）；
+    // tagIds：标签筛选（空=不限标签）。命中语义为「打了该标签或其全部子孙」；
+    // tagMatchAll：多标签组合方式，false=OR（命中任一）/ true=AND（须同时命中全部）。
     struct QueryFilters
     {
         QString form;
@@ -46,6 +49,8 @@ public:
         QString creationTo;
         QString createdFrom;
         QString createdTo;
+        QList<qint64> tagIds;
+        bool tagMatchAll = false;
     };
 
     // 带条件分页查询（M4 资源页）：

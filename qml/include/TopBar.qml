@@ -16,6 +16,8 @@ Item {
     signal fileImportRequested(string form, string channel)
     // 信号: 打开设置弹窗
     signal settingsRequested()
+    // 信号: 打开标签管理弹窗
+    signal tagManagerRequested()
 
     // 顶栏衬底
     Rectangle {
@@ -93,6 +95,12 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
                 onFileImportRequested: function (form, channel) { topBar.fileImportRequested(form, channel) }
                 onRefreshRequested: topBar.refreshRequested()
+            }
+
+            // 工具菜单（标签管理…等工具类入口）
+            ToolsMenu {
+                Layout.alignment: Qt.AlignVCenter
+                onTagManagerRequested: topBar.tagManagerRequested()
             }
 
             Item { Layout.fillWidth: true }

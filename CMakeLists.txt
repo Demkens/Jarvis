@@ -30,6 +30,7 @@ set (CORE_HEADERS
     core/schema/SchemaManager.h
     core/settings/SettingsService.h
     core/storage/StorageService.h
+    core/tag/TagService.h
     core/types/TypeEngine.h
     core/types/TypePackage.h
     core/types/TypePackageManager.h
@@ -50,6 +51,7 @@ add_library(jarvis_core STATIC
     core/library/LibraryService.cpp
     core/creator/CreatorService.cpp
     core/storage/StorageService.cpp
+    core/tag/TagService.cpp
     core/package/PackageService.cpp
     core/settings/SettingsService.cpp
     core/import/ImportService.cpp
@@ -88,11 +90,14 @@ qt_add_qml_module(jarvis
         qml/include/NavItem.qml
         qml/include/LeftBar.qml
         qml/include/DateField.qml
+        qml/include/TagTree.qml
+        qml/include/ToolsMenu.qml
         qml/include/AppDialogs.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/FilterDialog.qml
         qml/dialogs/EditPackageDialog.qml
+        qml/dialogs/TagManagerDialog.qml
         qml/windows/ViewerWindow.qml
         qml/windows/LibraryManagerWindow.qml
 )

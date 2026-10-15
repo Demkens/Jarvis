@@ -1,7 +1,8 @@
 // 包元数据编辑弹窗（一期验收：单击卡片可直接编辑元数据）。
-// 职责：集中编辑单个数据包的核心元数据——标题 / 创作者（可多作者） / 评分 / 创作日期；
+// 职责：集中编辑单个数据包的核心元数据——标题 / 创作者（可多作者） / 评分 / 创作日期 / 标签；
 //       所有写入都经 TypeEngine 门面（类型包与 QML 均不得直碰数据库）。
-// 承载说明：M6 标签体系落地后，「打标签」入口并入本弹窗（同一处编辑包的全部软性元数据）。
+// 打标签约束：标签树以 enforceAntichain=true 呈现——已勾选标签的祖先灰显不可勾，
+//       勾选子节点会自动移出已勾选的祖先，保证提交的集合恒为反链（服务层亦会二次校验）。
 // 对外属性：packageId —— 目标包 id；
 //           readOnlyFields —— 只读展示行（类型/大小/入库时间等，由 openFor 填充）；
 // 对外方法：openFor(id) —— 读库填充表单后弹出；
@@ -32,7 +33,7 @@ Popup {
     property string errorText: ""
 
     width: 460
-    height: 400
+    height: 640
     modal: true
     focus: true
     padding: 16
@@ -76,12 +77,14 @@ Popup {
         creatorsField.text = names.join("、")
         scoreSpin.value = detail.score > 0 ? detail.score : 0
         creationDateField.text = detail.creation_date || ""
+        // 打标签：以该包现有标签初始化树（服务层保证存量集合即反链）
+        tagTree.checkedIds = typeEngine.fileTags(id)
         errorText = ""
         open()
         titleField.forceActiveFocus()
     }
 
-    // 函数: 逐项写库（标题 → 创作者 → 评分 → 创作日期），任一失败即中止并提示
+    // 函数: 逐项写库（标题 → 创作者 → 评分 → 创作日期 → 标签），任一失败即中止并提示
     // 输入/输出: 无；成功→发 saved 并关闭
     function save() {
         var id = dialog.packageId
@@ -99,7 +102,8 @@ Popup {
             ["标题", typeEngine.updateTitle(id, title)],
             ["创作者", typeEngine.writeCreators(id, creatorsField.text.trim())],
             ["评分", typeEngine.ratePackage(id, scoreSpin.value)],
-            ["创作日期", typeEngine.updateCreationDate(id, creationDateField.text)]
+            ["创作日期", typeEngine.updateCreationDate(id, creationDateField.text)],
+            ["标签", typeEngine.writeFileTags(id, tagTree.checkedIds)]
         ]
         for (var i = 0; i < steps.length; ++i) {
             var r = steps[i][1]
@@ -172,10 +176,43 @@ Popup {
             }
         }
 
+        // ---- 标签（M6：打标入口并入本弹窗；强制反链）----
+        Text {
+            Layout.fillWidth: true
+            text: "标签"
+            font.pixelSize: 12
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 200
+            color: "#f7f9fc"
+            border.color: "#d5dbe6"
+            border.width: 1
+            radius: 4
+
+            TagTree {
+                id: tagTree
+                anchors.fill: parent
+                anchors.margins: 4
+                enforceAntichain: true
+                tagModel: typeEngine.tagTree
+            }
+
+            Text {
+                anchors.centerIn: parent
+                visible: (typeEngine.tagTree || []).length === 0
+                text: "暂无标签（可在顶栏「工具 → 标签管理…」中创建）"
+                color: "#9aa3b2"
+                font.pixelSize: 11
+            }
+        }
+
         Text {
             Layout.fillWidth: true
             text: "创作者可用「、」或「,」分隔多人，第一个为主要创作者；留空即「佚名」。"
                  + "再次评分按 0.4/0.6 加权（见评分算法）。"
+                 + "标签不可与其祖先/后代同时选中：勾选子节点会自动移出已勾选的祖先。"
             color: "#7a7a7a"
             font.pixelSize: 11
             wrapMode: Text.WrapAnywhere

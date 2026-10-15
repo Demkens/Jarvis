@@ -15,12 +15,13 @@
 #include "package/PackageService.h"
 #include "settings/SettingsService.h"
 #include "storage/StorageService.h"
+#include "tag/TagService.h"
 #include "ui/PackageViewContext.h"
 #include "types/TypePackage.h"
 #include "types/TypePackageManager.h"
 
 TypeEngine::TypeEngine(AppPaths *paths, LibraryService *library, TypePackageManager *typePackages,
-                       CreatorService *creators, PackageService *packages,
+                       CreatorService *creators, PackageService *packages, TagService *tags,
                        EventBus *events, SettingsService *settings, QObject *parent)
     : QObject(parent)
     , m_paths(paths)
@@ -28,12 +29,14 @@ TypeEngine::TypeEngine(AppPaths *paths, LibraryService *library, TypePackageMana
     , m_typePackages(typePackages)
     , m_creators(creators)
     , m_packageService(packages)
+    , m_tags(tags)
     , m_events(events)
     , m_settings(settings)
 {
     // 库切换/包增删改 → 刷新 QML 可见模型
     QObject::connect(m_events, &EventBus::librarySwitched, this, [this](const QString &) {
         refresh();
+        refreshTags();
     });
     QObject::connect(m_events, &EventBus::packageCreated, this,
                      [this](qint64, const QString &) { refresh(); });
@@ -41,6 +44,7 @@ TypeEngine::TypeEngine(AppPaths *paths, LibraryService *library, TypePackageMana
     QObject::connect(m_events, &EventBus::packageUpdated, this, [this](qint64) { refresh(); });
 
     refresh();
+    refreshTags();
 }
 
 QString TypeEngine::currentLibrary() const
@@ -119,6 +123,26 @@ QVariantList TypeEngine::loadPackages() const
     return enrichRows(rows);
 }
 
+// 标签树（当前库）；库未开返回空表（标签全库共享，与类型无关）
+QVariantList TypeEngine::loadTagTree() const
+{
+    if (!m_library->isOpen())
+        return {};
+    AppError error;
+    const QVariantList tree = m_tags->tree(&error);
+    if (!error.ok()) {
+        qWarning().noquote() << "[tags] 标签树读取失败:" << error.message;
+        return {};
+    }
+    return tree;
+}
+
+void TypeEngine::refreshTags()
+{
+    m_tagTree = loadTagTree();
+    emit tagTreeChanged();
+}
+
 // 给包行附加创作者显示名与封面 URL（资源页/查询共用；封面常驻 envs，离线也可显示）
 QVariantList TypeEngine::enrichRows(QVariantList rows) const
 {
@@ -155,6 +179,15 @@ QVariantMap TypeEngine::queryPackages(const QVariantMap &filters, int page)
     query.creationTo = filters.value(QStringLiteral("creationTo")).toString();
     query.createdFrom = filters.value(QStringLiteral("createdFrom")).toString();
     query.createdTo = filters.value(QStringLiteral("createdTo")).toString();
+    // 标签筛选：QML 传标签 id 数组（缺键/空数组=不限标签）；tagMatchAll 控制 AND/OR
+    const QVariantList tagIds = filters.value(QStringLiteral("tagIds")).toList();
+    for (const QVariant &value : tagIds) {
+        bool ok = false;
+        const qint64 tagId = value.toLongLong(&ok);
+        if (ok && tagId > 0)
+            query.tagIds.append(tagId);
+    }
+    query.tagMatchAll = filters.value(QStringLiteral("tagMatchAll")).toBool();
 
     const int pageSize = m_settings->pageSize(); // M5 全局设置"每页数量"
     const int pageNum = qMax(1, page);
@@ -229,6 +262,70 @@ QVariantMap TypeEngine::deletePackage(qint64 fileId)
     if (m_packageService->deletePackage(fileId, &error))
         return {{QStringLiteral("ok"), true}};
     return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+}
+
+QVariantMap TypeEngine::createTag(int parentId, const QString &name)
+{
+    qint64 newId = 0;
+    AppError error;
+    if (!m_tags->createTag(parentId, name, &newId, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    refreshTags();
+    return {{QStringLiteral("ok"), true}, {QStringLiteral("id"), newId}};
+}
+
+QVariantMap TypeEngine::renameTag(qint64 tagId, const QString &name)
+{
+    AppError error;
+    if (!m_tags->renameTag(tagId, name, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    refreshTags();
+    return {{QStringLiteral("ok"), true}};
+}
+
+QVariantMap TypeEngine::deleteTag(qint64 tagId)
+{
+    AppError error;
+    if (!m_tags->deleteTag(tagId, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    refreshTags();
+    // 标签删除会级联清理 file_tag，可能改变当前筛选结果 → 通知资源列表重查
+    emit packagesChanged();
+    return {{QStringLiteral("ok"), true}};
+}
+
+QVariantList TypeEngine::fileTags(qint64 fileId)
+{
+    QVariantList out;
+    if (!m_library->isOpen())
+        return out;
+    AppError error;
+    const QList<qint64> ids = m_tags->tagsOfFile(fileId, &error);
+    if (!error.ok()) {
+        qWarning().noquote() << "[tags] 读取包标签失败:" << error.message;
+        return out;
+    }
+    for (qint64 id : ids)
+        out.append(id);
+    return out;
+}
+
+QVariantMap TypeEngine::writeFileTags(qint64 fileId, const QVariantList &tagIds)
+{
+    QList<qint64> ids;
+    for (const QVariant &value : tagIds) {
+        bool ok = false;
+        const qint64 id = value.toLongLong(&ok);
+        if (ok && id > 0)
+            ids.append(id);
+    }
+
+    AppError error;
+    if (!m_tags->setFileTags(fileId, ids, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    // 绑定变化可能改变标签筛选结果 → 通知资源列表重查
+    emit packagesChanged();
+    return {{QStringLiteral("ok"), true}};
 }
 
 QString TypeEngine::packageDir(qint64 fileId)

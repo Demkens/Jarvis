@@ -14,6 +14,7 @@ class LibraryService;
 class PackageService;
 class PackageViewContext;
 class SettingsService;
+class TagService;
 class TypePackage;
 class TypePackageManager;
 
@@ -31,18 +32,24 @@ class TypeEngine : public QObject
     Q_PROPERTY(QVariantList enabledTypes READ enabledTypes NOTIFY enabledTypesChanged)
     Q_PROPERTY(QVariantList packages READ packages NOTIFY packagesChanged)
     Q_PROPERTY(QString currentLibrary READ currentLibrary NOTIFY enabledTypesChanged)
+    // 当前库标签树（扁平 DFS 序：[{id,parent_id,name,depth}]；parent_id=0 为顶级）
+    Q_PROPERTY(QVariantList tagTree READ tagTree NOTIFY tagTreeChanged)
 
 public:
     TypeEngine(AppPaths *paths, LibraryService *library, TypePackageManager *typePackages,
-               CreatorService *creators, PackageService *packages,
+               CreatorService *creators, PackageService *packages, TagService *tags,
                EventBus *events, SettingsService *settings, QObject *parent = nullptr);
 
     QVariantList enabledTypes() const { return m_enabledTypes; }
     QVariantList packages() const { return m_packageList; }
+    QVariantList tagTree() const { return m_tagTree; }
     QString currentLibrary() const;
 
     // 刷新启用类型与包清单（启动、库切换、包事件后调用）
     Q_INVOKABLE void refresh();
+
+    // 刷新标签树缓存（启动、库切换、标签结构变更后调用）
+    Q_INVOKABLE void refreshTags();
 
     // 类型包 QML 文件的 file:// URL（供 Loader 加载）；包缺失返回空 URL
     Q_INVOKABLE QUrl wizardUrl(const QString &form) const;
@@ -95,6 +102,19 @@ public:
     // 包实体目录绝对路径（"打开实体位置"用）；离线/库未开/包不存在返回空串
     Q_INVOKABLE QString packageDir(qint64 fileId);
 
+    // ---- M6 标签体系门面（统一返回 {ok, message?, ...}；数组按 QML 友好格式）----
+    // 新建标签：parentId=0 为顶级；返回 {ok, message?, id}。
+    Q_INVOKABLE QVariantMap createTag(int parentId, const QString &name);
+    // 重命名标签（不改变层级）
+    Q_INVOKABLE QVariantMap renameTag(qint64 tagId, const QString &name);
+    // 删除标签（子孙与关联行级联删除）
+    Q_INVOKABLE QVariantMap deleteTag(qint64 tagId);
+    // 某数据包已绑定的标签 id 列表（升序；库未开/包不存在返回空数组）
+    Q_INVOKABLE QVariantList fileTags(qint64 fileId);
+    // 整体替换某包的标签集合：tagIds 为 QML 数组（元素为标签 id）。
+    // 反链（任意两标签不得互为祖先/后代）由服务层校验，违反即拒绝并返回失败消息。
+    Q_INVOKABLE QVariantMap writeFileTags(qint64 fileId, const QVariantList &tagIds);
+
     // 包内首个文件（001.ext）的本地 URL（"用系统默认程序打开"用）。
     // 包目录仅含本包文件且按零填充序号命名，系统查看器据此可在同目录内翻页；
     // 离线/库未开/包不存在/无文件返回空 URL。
@@ -103,11 +123,13 @@ public:
 signals:
     void enabledTypesChanged();
     void packagesChanged();
+    void tagTreeChanged();
 
 private:
     const TypePackage *enabledPackage(const QString &form) const;
     QVariantList loadEnabledTypes() const;
     QVariantList loadPackages() const;
+    QVariantList loadTagTree() const;
     // 给包行附加 creatorName 与 coverUrl（loadPackages / queryPackages 共用）
     QVariantList enrichRows(QVariantList rows) const;
 
@@ -116,9 +138,11 @@ private:
     TypePackageManager *m_typePackages;
     CreatorService *m_creators;
     PackageService *m_packageService;
+    TagService *m_tags;
     EventBus *m_events;
     SettingsService *m_settings;
 
     QVariantList m_enabledTypes;
     QVariantList m_packageList;
+    QVariantList m_tagTree;
 };

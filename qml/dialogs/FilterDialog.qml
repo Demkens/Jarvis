@@ -1,8 +1,12 @@
 // 资源页统一筛选弹窗（右上角「筛选」按钮唤起）。
 // 职责：集中承载资源页的全部筛选维度（一期：类型 / 创作日期区间 / 入库时间区间；
-//       二期：在此追加标签树与创作者），以「应用」一次性提交，避免各维度散落顶栏形成多入口。
+//       M6：标签树 + AND/OR 组合开关；后续：创作者），以「应用」一次性提交，
+//       避免各维度散落顶栏形成多入口。
+// 标签筛选语义：选中某标签即命中「打了该标签或其全部子孙」的数据包（子孙含、父不含）；
+//       多标签时由开关决定组合方式——关=OR（命中任一）、开=AND（须同时命中全部）。
+//       筛选态的标签树不作反链约束（enforceAntichain=false），允许自由多选。
 // 数据流：本弹窗自身不持有筛选状态——openWith() 按当前生效值填充各输入控件，
-//        commit() 再从控件读取并打包输出；资源页是筛选状态的唯一持有者。
+//       commit() 再从控件读取并打包输出；资源页是筛选状态的唯一持有者。
 // 对外属性：typeModel —— 类型下拉模型（[{form, displayName}]，首位为「全部类型」）；
 // 对外方法：openWith(filters) —— 以当前生效的筛选值初始化后弹出；
 // 对外信号：applied(var filters) —— 点「应用」时发出，键与 ResourcePage.filters 一致。
@@ -21,11 +25,11 @@ Popup {
     // 区间校验提示（空=无错）
     property string errorText: ""
 
-    // 输出: 应用筛选（filters 含 form/creationFrom/creationTo/createdFrom/createdTo）
+    // 输出: 应用筛选（filters 含 form/creationFrom/creationTo/createdFrom/createdTo/tagIds/tagMatchAll）
     signal applied(var filters)
 
     width: 440
-    height: 300
+    height: 620
     modal: true
     focus: true
     padding: 16
@@ -53,6 +57,9 @@ Popup {
         creationToField.text = f.creationTo || ""
         createdFromField.text = f.createdFrom || ""
         createdToField.text = f.createdTo || ""
+        // 标签：整体替换勾选集合（筛选态不强制反链，允许嵌套多选）
+        tagTree.checkedIds = f.tagIds || []
+        matchAllSwitch.checked = !!f.tagMatchAll
         errorText = ""
         open()
     }
@@ -65,6 +72,8 @@ Popup {
         creationToField.text = ""
         createdFromField.text = ""
         createdToField.text = ""
+        tagTree.checkedIds = []
+        matchAllSwitch.checked = false
         errorText = ""
     }
 
@@ -94,7 +103,10 @@ Popup {
             creationFrom: creationFrom,
             creationTo: creationTo,
             createdFrom: createdFrom,
-            createdTo: createdTo
+            createdTo: createdTo,
+            // 标签 id 数组按模型先序拷贝（避免与树内部数组共享引用）
+            tagIds: tagTree.checkedIds.slice(0),
+            tagMatchAll: matchAllSwitch.checked
         })
         dialog.close()
     }
@@ -162,6 +174,53 @@ Popup {
             }
         }
 
+        // ---- 标签（M6：选中即命中该标签或其全部子孙；筛选态允许嵌套多选）----
+        Text {
+            Layout.fillWidth: true
+            text: "标签"
+            font.pixelSize: 12
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 220
+            color: "#f7f9fc"
+            border.color: "#d5dbe6"
+            border.width: 1
+            radius: 4
+
+            TagTree {
+                id: tagTree
+                anchors.fill: parent
+                anchors.margins: 4
+                enforceAntichain: false
+                tagModel: typeEngine.tagTree
+            }
+
+            Text {
+                anchors.centerIn: parent
+                visible: (typeEngine.tagTree || []).length === 0
+                text: "暂无标签（可在顶栏「工具 → 标签管理…」中创建）"
+                color: "#9aa3b2"
+                font.pixelSize: 11
+            }
+        }
+
+        // 多标签组合方式：关=OR（命中任一）；开=AND（须同时命中全部）
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Text {
+                text: "多标签组合"
+                font.pixelSize: 12
+            }
+            Switch {
+                id: matchAllSwitch
+                text: matchAllSwitch.checked ? "AND（须全部命中）" : "OR（命中任一）"
+                font.pixelSize: 12
+            }
+        }
+
         Text {
             Layout.fillWidth: true
             visible: dialog.errorText !== ""
@@ -173,7 +232,7 @@ Popup {
 
         Text {
             Layout.fillWidth: true
-            text: "留空即该维度不限；二期将在此追加标签树与创作者筛选。"
+            text: "留空即该维度不限；标签命中含其全部子孙（不含父）。"
             color: "#7a7a7a"
             font.pixelSize: 11
             wrapMode: Text.WrapAnywhere

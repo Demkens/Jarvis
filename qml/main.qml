@@ -51,6 +51,8 @@ Item {
                 onFileImportRequested: function (form, channel) { dialogs.startImport(form, channel) }
                 // 槽函数: 打开设置弹窗
                 onSettingsRequested: dialogs.openSettings()
+                // 槽函数: 打开标签管理弹窗
+                onTagManagerRequested: dialogs.openTagManager()
             }
 
             RowLayout {
