@@ -10,6 +10,7 @@
 
 namespace {
 
+// 由原子计数器生成 m_writeName/m_readName 保证每个 DbAccess 实例的连接名全局唯一
 QString makeConnectionName(const char *role)
 {
     static std::atomic<int> counter{0};
@@ -18,7 +19,7 @@ QString makeConnectionName(const char *role)
         .arg(++counter);
 }
 
-} // namespace
+}
 
 DbAccess::DbAccess()
     : m_writeName(makeConnectionName("write"))
@@ -33,8 +34,10 @@ DbAccess::~DbAccess()
 
 bool DbAccess::open(const QString &databasePath, AppError *error)
 {
+    // 切库/重开时先释放可能的旧连接
     close();
-
+    
+    // 检查数据库文件是否存在 
     if (!QFileInfo::exists(databasePath)) {
         if (error != nullptr) {
             *error = AppError::fail(AppError::Db,
@@ -43,11 +46,11 @@ bool DbAccess::open(const QString &databasePath, AppError *error)
         return false;
     }
 
+    // 全局唯一数据库建立连接处
     m_write = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_writeName);
     m_read = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_readName);
     m_write.setDatabaseName(databasePath);
     m_read.setDatabaseName(databasePath);
-
     if (!m_write.open() || !m_read.open()) {
         const QString text = m_write.lastError().text();
         if (error != nullptr)
@@ -81,18 +84,14 @@ bool DbAccess::open(const QString &databasePath, AppError *error)
 
 void DbAccess::close()
 {
-    if (m_write.isOpen())
-        m_write.close();
-    if (m_read.isOpen())
-        m_read.close();
+    if (m_write.isOpen()) m_write.close();
+    if (m_read.isOpen()) m_read.close();
 
-    // 必须先清空连接句柄再 removeDatabase，否则 Qt 报警告且移除无效
+    // 清空连接句柄再removeDatabasey移除连接，否则Qt报警告且移除无效
     m_write = QSqlDatabase();
     m_read = QSqlDatabase();
-    if (QSqlDatabase::contains(m_writeName))
-        QSqlDatabase::removeDatabase(m_writeName);
-    if (QSqlDatabase::contains(m_readName))
-        QSqlDatabase::removeDatabase(m_readName);
+    if (QSqlDatabase::contains(m_writeName)) QSqlDatabase::removeDatabase(m_writeName);
+    if (QSqlDatabase::contains(m_readName)) QSqlDatabase::removeDatabase(m_readName);
 
     if (!m_path.isEmpty())
         qInfo().noquote() << "[db] 已关闭:" << QDir::toNativeSeparators(m_path);

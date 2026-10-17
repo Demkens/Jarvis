@@ -1,3 +1,8 @@
+// 软件唯一入口: 
+// 1. 最先安装日志模块
+// 2. 解析命令行参数`--library <库名>`
+// 3. 调用`Application::initialize()`装配全部服务, 调用`loadFromModule()`拉起界面
+ 
 #include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -6,41 +11,37 @@
 #include "common/Logging.h"
 #include "library/AppPaths.h"
 
-// 组合根：main.cpp 是唯一装配点 —— 创建核心服务、注入 QML 上下文。
-// QML 不自行构造数据模型（废弃 v1 的散点 qmlRegisterType）。
-// 多进程模型：--library <name> 直接打开指定库作为本进程主窗口；无参数时入口进程
-// 恢复上次库（无库则进入库管理门禁窗口）。
 int main(int argc, char *argv[])
-{
-    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
-        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-    QGuiApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("Jarvis"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(JARVIS_CORE_VERSION));
+{   
+    // 设置软件运行环境
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);    // 高 DPI 舍入策略
+    QCoreApplication::setApplicationName(QStringLiteral("Jarvis"));     // 给应用取名
+    QCoreApplication::setApplicationVersion(QStringLiteral(JARVIS_CORE_VERSION));   // 登记核心版本号
+    QGuiApplication app(argc, argv);    // 创建应用对象
 
-    // 日志最先安装：让后续所有初始化诊断（含类型包发现、库打开）都进入日志文件
+    // 安装日志模块：让所有的初始化诊断(含类型包发现、库打开)都写入日志文件
     Logging::install(AppPaths::defaultEnvsRoot());
 
-    // 解析 --library <name>：指定本进程打开的库
-    QCommandLineParser parser;
+    // 解析命令行参数 --library <name>：指定本进程打开的库
+    QCommandLineParser parser;          // 创建命令行参数解析器
     parser.setApplicationDescription(QStringLiteral("Jarvis 本地资源管理"));
-    parser.addHelpOption();
-    parser.addVersionOption();
-    QCommandLineOption libraryOption(
+    parser.addHelpOption();             // 注册`-h / --help`
+    parser.addVersionOption();          // 注册`-v / --version`
+    QCommandLineOption libraryOption(   // 声明名为`library` 的自定义选项
         QStringLiteral("library"),
         QStringLiteral("打开指定库（库名即 envs 下目录名）"),
         QStringLiteral("name"));
-    parser.addOption(libraryOption);
-    parser.process(app);
+    parser.addOption(libraryOption);    // 把选项登记进解析器
+    parser.process(app);                // 开始解析应用对象的命令行参数
 
-    Application application;
-    application.initialize(parser.value(libraryOption));
-
-    QQmlApplicationEngine engine;
-    application.bindToQml(engine);
-    engine.loadFromModule("Jarvis", "Main");
-    if (engine.rootObjects().isEmpty())
+    // 调用`Application::initialize()`装配全部服务, 调用`loadFromModule()`拉起界面
+    Application application;                    // 组合根，全程序唯一创建并组装所有服务的地方
+    application.initialize(parser.value(libraryOption));    // 按这个库名装配全部服务
+    QQmlApplicationEngine engine;               // 构建QML引擎, 承载类型系统与所有QML根对象
+    application.bindToQml(engine);              // 把4个服务注入QML上下文(`libraryService``typePackageManager``typeEngine``importService`)
+    engine.loadFromModule("Jarvis", "Main");    // 指定QML的入口文件为Jarvis的Main.qml
+    if (engine.rootObjects().isEmpty())         // 装载失败检测
         return -1;
 
-    return QGuiApplication::exec();
+    return QGuiApplication::exec();             // 启动事件循环并阻塞 ，直到退出条件满足
 }

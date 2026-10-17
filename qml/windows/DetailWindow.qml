@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // 独立详情窗口：元数据 + 包内文件结构化预览。
-// 数据源：typeEngine.readFields(id) 取元数据；createPackageView(id) 取包内文件清单。
+// 数据源：typeEngine.packageDetail(id) 取元数据；createPackageView(id) 取包内文件清单。
 Window {
     id: window
     visible: false
@@ -54,7 +54,7 @@ Window {
     function refresh() {
         if (window.packageId <= 0)
             return
-        window.detail = typeEngine.readFields(window.packageId)
+        window.detail = typeEngine.packageDetail(window.packageId)
         window.detailTitle = window.detail.title || "untitled"
     }
 
@@ -67,7 +67,7 @@ Window {
 
     function openPackage(id) {
         window.packageId = id
-        window.detail = typeEngine.readFields(id)
+        window.detail = typeEngine.packageDetail(id)
         window.detailTitle = window.detail.title || "untitled"
         var view = typeEngine.createPackageView(id)
         window.fileList = view ? view.files : []

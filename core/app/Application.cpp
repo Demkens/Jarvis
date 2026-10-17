@@ -66,10 +66,8 @@ bool Application::initialize(const QString &libraryOverride)
 
 void Application::bindToQml(QQmlApplicationEngine &engine)
 {
-    engine.rootContext()->setContextProperty(QStringLiteral("typePackageManager"),
-                                             m_typePackages.get());
-    engine.rootContext()->setContextProperty(QStringLiteral("libraryService"),
-                                             m_library.get());
+    engine.rootContext()->setContextProperty(QStringLiteral("typePackageManager"), m_typePackages.get());
+    engine.rootContext()->setContextProperty(QStringLiteral("libraryService"), m_library.get());
     engine.rootContext()->setContextProperty(QStringLiteral("typeEngine"), m_typeEngine.get());
     engine.rootContext()->setContextProperty(QStringLiteral("importService"), m_import.get());
 }

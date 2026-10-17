@@ -1,3 +1,7 @@
+// 组合根, 全程序唯一创建并组装所有服务的地方: 
+// 1. 通过initialize函数创建并装配全部核心服务
+// 2. 通过bindToQml函数向 QML 注入4个服务的上下文
+
 #pragma once
 
 #include <QObject>
@@ -17,8 +21,6 @@ class TagService;
 class TypeEngine;
 class TypePackageManager;
 
-// 组合根：持有并装配全部核心服务，向 QML 注入上下文。
-// 服务之间不直接互相持有，协作经事件总线或显式调用。
 class Application : public QObject
 {
     Q_OBJECT
@@ -27,8 +29,7 @@ public:
     explicit Application(QObject *parent = nullptr);
     ~Application() override;
 
-    // 装配顺序：路径/事件 → 类型包发现 → 库服务启动（libraryOverride 非空时为多进程
-    // 入口指定的库；为空则恢复上次库）
+    // 装配顺序：路径/事件 → 类型包发现 → 库服务启动（libraryOverride 非空时为多进程入口指定的库；为空则恢复上次库）
     bool initialize(const QString &libraryOverride = {});
 
     void bindToQml(QQmlApplicationEngine &engine);

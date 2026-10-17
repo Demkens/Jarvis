@@ -16,7 +16,7 @@ class StorageService;
 // 纪律：
 // - 评分入口唯一（类型包不得直写 score）；0 = 未评分；
 // - 浏览记忆写回不触碰 file.updated_time；
-// - 删除顺序：事务删 db 行（分表/关联表靠外键级联）→ 删包文件夹 → 删封面。
+// - 删除顺序：事务删 db 行（关联表靠外键级联）→ 删包文件夹 → 删封面。
 class PackageService
 {
 public:
@@ -58,7 +58,7 @@ public:
     QVariantList queryPackages(const QueryFilters &filters, int offset, int limit, int *total,
                                AppError *error = nullptr) const;
 
-    // 单包详情：file 行（含核心列 creation_date）+ type_form + 分表自有字段合并
+    // 单包详情：file 行（含核心列 creation_date）+ type_form
     // + 创作者多对多（creatorName=主要创作者 / creators=全列表 / creatorCount=数量）
     QVariantMap packageDetail(qint64 id, AppError *error = nullptr) const;
 

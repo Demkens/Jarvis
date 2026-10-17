@@ -21,7 +21,7 @@ class TypePackageManager;
 // 类型引擎（开发文档 3.4）：type.json 驱动的 QML 门面。
 // 职责：
 // - 回答"当前库启用了哪些类型、各自字段/包结构/查看器在哪"（QML 据此渲染）；
-// - 分表字段的通用读写（creator 类型经核心 find-or-create，类型包不直写 db）；
+// - 包详情读写与创作者绑定（creator 类型经核心 find-or-create，类型包不直写 db）；
 // - 加载类型包 wizard.qml / viewer.qml 并为查看器制造上下文对象；
 // - 维护当前库包清单（供 M3 简易列表与 M4 资源页共用）。
 // 边界：不拥有连接（借图书馆长的 DbAccess）；不碰实体文件（导入导出归 ImportService）。
@@ -60,17 +60,13 @@ public:
     // 后者未注册进 QML 元类型系统，引擎会报 Unknown method return type。
     Q_INVOKABLE QObject *createPackageView(qint64 fileId);
 
-    // ---- 分表通用 CRUD ----
-    // 读：file 行之外的分表字段（含 creatorName 解析结果）。
+    // ---- 数据包详情 ----
+    // 读：file 总表列 + 创作者列表 + 封面 URL + 类型 form（见 PackageService::packageDetail）。
     // QML 只能调单参版：AppError* 指针参数无法进入 QML 元方法表，
     // 带指针的重载会被引擎过滤，QML 侧报 "not a function"。
-    // 双参版仅供 C++ 内部/测试获取错误信息。
-    Q_INVOKABLE QVariantMap readFields(qint64 fileId) const;
-    QVariantMap readFields(qint64 fileId, AppError *error) const;
-
-    // 写：values 的键为字段名；date 传空串置 NULL。成功后广播 PackageUpdated。
-    // 创作者多对多不走此入口，请用 writeCreators。
-    Q_INVOKABLE QVariantMap writeFields(qint64 fileId, const QVariantMap &values);
+    // 双参版仅供 C++ 内部获取错误信息。
+    Q_INVOKABLE QVariantMap packageDetail(qint64 fileId) const;
+    QVariantMap packageDetail(qint64 fileId, AppError *error) const;
 
     // 写创作者多对多：names 为分隔符拼接文本（splitNames 拆分，第一个为主要创作者）；
     // 事务内整体替换该包的 file_creator 行（先删后插）；空文本 → 归为默认创作者「佚名」。

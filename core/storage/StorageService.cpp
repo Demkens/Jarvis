@@ -180,22 +180,6 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         return fail(AppError::Conflict, QStringLiteral("类型未在该库启用：%1").arg(plan.form));
     const qint64 typeId = typeRow.value(QStringLiteral("id")).toLongLong();
 
-    // 分表自有列数（表名来自 type 表登记，仍以安全标识符校验兜底）：
-    // only-id 的分表（如 draw 已把创作日期收归核心、创作者收归关联表）无需建行——分表退化为类型标记，
-    // 详情读取按「缺行即无类型字段」容忍；反之若仍有自有列，则先建 id 行，供后续 writeFields 更新
-    AppError pragmaError;
-    const QList<QVariantMap> columns = db.select(
-        QStringLiteral("PRAGMA table_info(%1)").arg(plan.form), {}, &pragmaError);
-    if (!pragmaError.ok()) {
-        if (error != nullptr) *error = pragmaError;
-        return -1;
-    }
-    int ownColumnCount = 0;
-    for (const QVariantMap &column : columns) {
-        if (column.value(QStringLiteral("name")).toString() != QStringLiteral("id"))
-            ++ownColumnCount;
-    }
-
     // ---- 2. 开事务：创作者解析与占位行随事务回滚 ----
     if (!db.transaction(error))
         return -1;
@@ -279,15 +263,7 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     if (!generateCover(coverSource, targetCover, error))
         return abortImport(QStringLiteral("封面生成失败"));
 
-    // ---- 5. 分表行：仅当类型仍有自有字段时建 id 占位行（creator 已独立到 file_creator，
-    //         创作日期已升格到 file，分表只保留类型自有字段）----
-    if (ownColumnCount > 0) {
-        if (!db.execute(QStringLiteral("INSERT INTO %1 (id) VALUES (:id)").arg(plan.form),
-                        {{QStringLiteral("id"), id}}, error))
-            return abortImport(QStringLiteral("分表写入失败"));
-    }
-
-    // ---- 5.5 写创作者关联（多对多；空输入已归为「佚名」，故至少一条）----
+    // ---- 5. 写创作者关联（多对多；空输入已归为「佚名」，故至少一条）----
     for (int index = 0; index < creatorIds.size(); ++index) {
         if (!db.execute(QStringLiteral(
                             "INSERT INTO file_creator (file_id, creator_id, sort_order) "

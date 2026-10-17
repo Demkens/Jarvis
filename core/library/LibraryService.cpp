@@ -115,22 +115,6 @@ bool LibraryService::openEntry(const LibraryEntry &entry, AppError *error)
     SchemaManager schema;
     if (!schema.ensureCoreSchema(m_db, error))
         return false;
-
-    // 补齐各启用类型的迁移段（版本门控，只跑缺失段；类型包文件缺失则跳过，不阻断打开）
-    AppError local;
-    const QList<QVariantMap> rows = m_db.select(QStringLiteral("SELECT form FROM type"), {}, &local);
-    if (!local.ok()) {
-        if (error != nullptr)
-            *error = local;
-        return false;
-    }
-    for (const QVariantMap &row : rows) {
-        const TypePackage *package = m_typePackages->package(row.value(QStringLiteral("form")).toString());
-        if (package == nullptr)
-            continue; // 包文件缺失：数据只读，跳过迁移
-        if (!schema.enableTypePackage(m_db, *package, error))
-            return false;
-    }
     return true;
 }
 
@@ -317,17 +301,33 @@ QVariantMap LibraryService::createLibraryImpl(const QString &name,
         return failResult(error);
     }
 
-    // ---- 6. 事务内建核心表 + 各类型分表 ----
+    // ---- 6. 事务内建核心表 + 登记启用类型 ----
     SchemaManager schema;
     if (!schema.ensureCoreSchema(*db, &error)) {
         cleanup();
         return failResult(error);
     }
-    for (const QString &form : uniqueForms) {
-        const TypePackage *package = m_typePackages->package(form);
-        if (!schema.enableTypePackage(*db, *package, &error)) {
+    // 启用类型：仅在事务内登记 type 表一行（类型无 DB 侧私有字段，故不建 <form> 分表）
+    if (!uniqueForms.isEmpty()) {
+        if (!db->transaction(&error)) {
             cleanup();
-            return failResult(QStringLiteral("类型 %1 启用失败：%2").arg(form, error.message));
+            return failResult(error);
+        }
+        for (const QString &form : uniqueForms) {
+            const TypePackage *package = m_typePackages->package(form);
+            if (!db->execute(QStringLiteral("INSERT INTO type (name, form) VALUES (:name, :form)"),
+                             {{QStringLiteral("name"), package->displayName},
+                              {QStringLiteral("form"), form}},
+                             &error)) {
+                db->rollback();
+                cleanup();
+                return failResult(QStringLiteral("类型 %1 登记失败：%2").arg(form, error.message));
+            }
+        }
+        if (!db->commit(&error)) {
+            db->rollback();
+            cleanup();
+            return failResult(error);
         }
     }
 

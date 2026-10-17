@@ -2,9 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
-#include <QHash>
 #include <QQmlEngine>
-#include <QSet>
 #include <QUrl>
 
 #include "creator/CreatorService.h"
@@ -90,20 +88,9 @@ QVariantList TypeEngine::loadEnabledTypes() const
         if (package == nullptr)
             continue; // 类型包文件缺失：数据只读隐藏（开发文档 4.4）
 
-        QVariantList fields;
-        for (const TypePackage::Field &field : package->fields) {
-            fields.append(QVariantMap{
-                {QStringLiteral("name"), field.name},
-                {QStringLiteral("type"), field.type},
-                {QStringLiteral("label"), field.label},
-                {QStringLiteral("required"), field.required},
-                {QStringLiteral("defaultValue"), field.defaultValue},
-            });
-        }
         list.append(QVariantMap{
             {QStringLiteral("form"), package->form},
             {QStringLiteral("displayName"), package->displayName},
-            {QStringLiteral("fields"), fields},
             {QStringLiteral("layoutKind"), package->packageLayoutKind},
             {QStringLiteral("browseOrder"), package->browseOrder},
         });
@@ -358,13 +345,13 @@ QUrl TypeEngine::firstFileUrl(qint64 fileId)
     return QUrl::fromLocalFile(entries.first().absoluteFilePath());
 }
 
-QVariantMap TypeEngine::readFields(qint64 fileId) const
+QVariantMap TypeEngine::packageDetail(qint64 fileId) const
 {
     // QML 入口：无错误指针，失败时 QML 侧按空对象处理
-    return readFields(fileId, nullptr);
+    return packageDetail(fileId, nullptr);
 }
 
-QVariantMap TypeEngine::readFields(qint64 fileId, AppError *error) const
+QVariantMap TypeEngine::packageDetail(qint64 fileId, AppError *error) const
 {
     return m_packageService->packageDetail(fileId, error);
 }
@@ -390,92 +377,16 @@ QObject *TypeEngine::createPackageView(qint64 fileId)
 
     // parent 传 nullptr + JavaScriptOwnership：生命周期完全归 QML（GC 回收），
     // 避免 C++ parent 链与 JS 所有权并存导致的退出期 use-after-free。
-    auto *context = new PackageViewContext(fileId, m_paths, m_library, m_packageService, this,
-                                           nullptr);
+    auto *context = new PackageViewContext(fileId, m_paths, m_library, m_packageService, nullptr);
     QQmlEngine::setObjectOwnership(context, QQmlEngine::JavaScriptOwnership);
     return context;
-}
-
-QVariantMap TypeEngine::writeFields(qint64 fileId, const QVariantMap &values)
-{
-    AppError error;
-    const QVariantMap detail = m_packageService->packageDetail(fileId, &error);
-    if (!error.ok())
-        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
-    if (detail.isEmpty())
-        return {{QStringLiteral("ok"), false},
-                {QStringLiteral("message"), QStringLiteral("数据包不存在：#%1").arg(fileId)}};
-
-    const QString form = detail.value(QStringLiteral("type_form")).toString();
-    // 拼 SQL 前的纵深防御：表名必须通过安全校验（与 StorageService 其余拼接点一致）
-    if (!StorageService::isSafeFormName(form))
-        return {{QStringLiteral("ok"), false},
-                {QStringLiteral("message"), QStringLiteral("类型名非法：%1").arg(form)}};
-    const TypePackage *package = enabledPackage(form);
-    if (package == nullptr)
-        return {{QStringLiteral("ok"), false},
-                {QStringLiteral("message"), QStringLiteral("类型包缺失，字段只读：%1").arg(form)}};
-
-    // 分表实有列（防写不存在的列）
-    const QList<QVariantMap> columns = m_library->dbAccess().select(
-        QStringLiteral("PRAGMA table_info(%1)").arg(form), {}, &error);
-    if (!error.ok())
-        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
-    QSet<QString> actualColumns;
-    for (const QVariantMap &column : columns)
-        actualColumns.insert(column.value(QStringLiteral("name")).toString());
-
-    // 字段名 → 字段类型（type.json 声明）
-    QHash<QString, QString> declaredTypes;
-    for (const TypePackage::Field &field : package->fields)
-        declaredTypes.insert(field.name, field.type);
-    QStringList setClauses;
-    QVariantMap params{{QStringLiteral("id"), fileId}};
-    for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
-        const QString name = it.key();
-        if (name == QStringLiteral("id"))
-            continue;
-        if (!actualColumns.contains(name))
-            return {{QStringLiteral("ok"), false},
-                    {QStringLiteral("message"), QStringLiteral("字段不存在：%1").arg(name)}};
-
-        const QString declaredType = declaredTypes.value(name);
-        QVariant stored = it.value();
-
-        if (declaredType == QStringLiteral("date")) {
-            // 空串 → NULL（未设置）；非空须为严格 YYYY-MM-DD（v5 起统一精度）
-            const QString text = stored.toString().trimmed();
-            if (text.isEmpty()) {
-                stored = QVariant();
-            } else if (!StorageService::isValidCreationDate(text)) {
-                return {{QStringLiteral("ok"), false},
-                        {QStringLiteral("message"),
-                         QStringLiteral("日期格式须为 YYYY-MM-DD：%1").arg(text)}};
-            }
-        }
-
-        setClauses.append(QStringLiteral("%1 = :%1").arg(name));
-        params.insert(name, stored);
-    }
-
-    if (setClauses.isEmpty())
-        return {{QStringLiteral("ok"), true}, {QStringLiteral("message"), QStringLiteral("无字段需要写入")}};
-
-    if (!m_library->dbAccess().execute(
-            QStringLiteral("UPDATE %1 SET %2 WHERE id = :id")
-                .arg(form, setClauses.join(QStringLiteral(", "))),
-            params, &error))
-        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
-
-    emit m_events->packageUpdated(fileId);
-    return {{QStringLiteral("ok"), true}};
 }
 
 QVariantMap TypeEngine::writeCreators(qint64 fileId, const QString &names)
 {
     // 数据包存在性校验（复用详情读取；文件不存在/库未开时 detail 为空）
     AppError error;
-    const QVariantMap detail = readFields(fileId, &error);
+    const QVariantMap detail = packageDetail(fileId, &error);
     if (!error.ok() || detail.isEmpty())
         return {{QStringLiteral("ok"), false},
                 {QStringLiteral("message"),

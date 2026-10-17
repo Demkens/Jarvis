@@ -3,26 +3,20 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QSet>
 #include <QUrl>
 
 #include "library/AppPaths.h"
 #include "library/LibraryService.h"
 #include "package/PackageService.h"
 #include "storage/StorageService.h"
-#include "types/TypeEngine.h"
 
 PackageViewContext::PackageViewContext(qint64 packageId, AppPaths *paths, LibraryService *library,
-                                       PackageService *packages, TypeEngine *engine,
-                                       QObject *parent)
+                                       PackageService *packages, QObject *parent)
     : QObject(parent)
     , m_packageId(packageId)
     , m_paths(paths)
     , m_library(library)
     , m_packages(packages)
-    , m_engine(engine)
 {
     load();
 }
@@ -36,17 +30,6 @@ void PackageViewContext::load()
 
     m_title = detail.value(QStringLiteral("title")).toString();
     m_typeForm = detail.value(QStringLiteral("type_form")).toString();
-
-    // 分表字段（剔除 file 总表列，只留类型专属字段 + 解析后的创作者名）
-    static const QSet<QString> kFileColumns = {
-        QStringLiteral("id"),       QStringLiteral("title"),     QStringLiteral("type_id"),
-        QStringLiteral("score"),    QStringLiteral("size"),      QStringLiteral("storage_path"),
-        QStringLiteral("created_time"), QStringLiteral("updated_time"),
-        QStringLiteral("type_form")};
-    for (auto it = detail.constBegin(); it != detail.constEnd(); ++it) {
-        if (!kFileColumns.contains(it.key()))
-            m_fields.insert(it.key(), it.value());
-    }
 
     // 包内文件清单（物理路径由核心拼接，顺序按文件名，即 001→002…）
     const QString libraryName = m_library->currentName();
@@ -71,7 +54,6 @@ void PackageViewContext::load()
     m_position = m_packages->browseState(m_packageId, &error);
 
     emit dataChanged();
-    emit fieldsChanged();
     emit positionChanged();
 }
 
@@ -91,36 +73,4 @@ bool PackageViewContext::savePosition()
         return false;
     }
     return true;
-}
-
-QVariantMap PackageViewContext::writeField(const QString &name, const QVariant &value)
-{
-    QVariantMap values;
-    values.insert(name, value);
-    const QVariantMap result = m_engine->writeFields(m_packageId, values);
-    if (result.value(QStringLiteral("ok")).toBool())
-        reloadMeta();
-    return result;
-}
-
-void PackageViewContext::reloadMeta()
-{
-    AppError error;
-    const QVariantMap detail = m_packages->packageDetail(m_packageId, &error);
-    if (!error.ok())
-        return;
-
-    m_title = detail.value(QStringLiteral("title")).toString();
-    static const QSet<QString> kFileColumns = {
-        QStringLiteral("id"),       QStringLiteral("title"),     QStringLiteral("type_id"),
-        QStringLiteral("score"),    QStringLiteral("size"),      QStringLiteral("storage_path"),
-        QStringLiteral("created_time"), QStringLiteral("updated_time"),
-        QStringLiteral("type_form")};
-    m_fields.clear();
-    for (auto it = detail.constBegin(); it != detail.constEnd(); ++it) {
-        if (!kFileColumns.contains(it.key()))
-            m_fields.insert(it.key(), it.value());
-    }
-    emit dataChanged();
-    emit fieldsChanged();
 }

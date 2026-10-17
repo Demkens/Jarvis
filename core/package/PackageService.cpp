@@ -244,32 +244,7 @@ QVariantMap PackageService::packageDetail(qint64 id, AppError *error) const
         return {};
     }
 
-    // 分表字段（表名来自本库 type 表登记，非用户输入；仍校验安全标识符兜底）
-    const QString form = row.value(QStringLiteral("type_form")).toString();
-    if (StorageService::isSafeFormName(form)) {
-        const int exists = db.scalar(
-            QStringLiteral("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = :n"),
-            {{QStringLiteral("n"), form}}, &local).toInt();
-        if (failed(local, error))
-            return {};
-
-        if (exists == 1) {
-            QVariantMap typeRow;
-            const bool typeFound = db.selectOne(
-                QStringLiteral("SELECT * FROM %1 WHERE id = :id").arg(form),
-                {{QStringLiteral("id"), id}}, typeRow, &local);
-            if (failed(local, error))
-                return {};
-            if (typeFound) {
-                for (auto it = typeRow.constBegin(); it != typeRow.constEnd(); ++it) {
-                    if (it.key() != QStringLiteral("id"))
-                        row.insert(it.key(), it.value());
-                }
-            }
-        }
-    }
-
-    // 创作者多对多（全局关联表，不依赖分表）：按 sort_order 列出全部名字。
+    // 创作者多对多（全局关联表）：按 sort_order 列出全部名字。
     // creatorName=主要创作者（无关联则兜底「佚名」）；creators=完整列表；creatorCount=数量。
     const QList<QVariantMap> creatorRows = db.select(
         QStringLiteral("SELECT c.name FROM file_creator fc "
@@ -454,7 +429,7 @@ bool PackageService::deletePackage(qint64 id, AppError *error)
     }
     const int bucket = row.value(QStringLiteral("storage_path")).toInt();
 
-    // 1. 事务删除 db 行（分表/browse_state/关联表靠外键级联，开发文档 6.10）
+    // 1. 事务删除 db 行（browse_state/关联表靠外键级联，开发文档 6.10）
     if (!db.transaction(error))
         return false;
     if (!db.execute(QStringLiteral("DELETE FROM file WHERE id = :id"),

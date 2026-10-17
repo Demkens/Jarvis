@@ -89,12 +89,11 @@ bool TypePackageManager::loadOne(const QString &dirPath)
     const QDir dir(dirPath);
     const QString formHint = dir.dirName();
 
-    // 1. 四个契约文件必须齐备
+    // 1. 三个契约文件必须齐备（类型无 DB 侧私有字段，故不再要求 migrate.sql）
     const QString typeJsonPath = dir.absoluteFilePath(QStringLiteral("type.json"));
-    const QString migratePath  = dir.absoluteFilePath(QStringLiteral("migrate.sql"));
     const QString wizardPath   = dir.absoluteFilePath(QStringLiteral("wizard.qml"));
     const QString viewerPath   = dir.absoluteFilePath(QStringLiteral("viewer.qml"));
-    for (const QString &path : {typeJsonPath, migratePath, wizardPath, viewerPath}) {
+    for (const QString &path : {typeJsonPath, wizardPath, viewerPath}) {
         if (!QFileInfo::exists(path)) {
             qWarning().noquote() << "[types]" << formHint << "缺少契约文件，跳过:"
                                  << QFileInfo(path).fileName();
@@ -144,7 +143,6 @@ bool TypePackageManager::loadOne(const QString &dirPath)
 
     // 7. 登记路径并入库
     pkg->dirPath = dirPath;
-    pkg->migratePath = migratePath;
     pkg->wizardPath = wizardPath;
     pkg->viewerPath = viewerPath;
     m_packages.push_back(std::move(pkg));

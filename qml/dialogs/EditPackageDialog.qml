@@ -62,7 +62,7 @@ Popup {
     // 函数: 载入目标包当前值并弹出
     // 输入: id —— 包 id；输出: 无
     function openFor(id) {
-        var detail = typeEngine.readFields(id)
+        var detail = typeEngine.packageDetail(id)
         if (!detail || !detail.id) {
             dialog.failed("无法读取数据包：#" + id)
             return

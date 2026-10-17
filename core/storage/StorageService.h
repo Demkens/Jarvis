@@ -14,7 +14,7 @@ class LibraryService;
 // 由 StorageService 独占执行——类型包永远不直接操作实际库文件系统。
 struct ImportPlan
 {
-    QString form;            // 目标类型 form（分表名）
+    QString form;            // 目标类型 form（须与类型包 type.json 的 form 一致）
     QString title;           // 标题；空则落库为 'untitled'
     QString creatorName;     // 创作者名；空 → 「佚名」，经 CreatorService find-or-create
     QString creationDate;    // 创作日期 TEXT：严格 YYYY-MM-DD；空 → 落库取当天兜底
@@ -40,7 +40,8 @@ public:
     static int bucketOf(qint64 id);
     // 包内序号文件名的数字部分：1→"001"，999→"999"，1000→"1000"
     static QString indexedName(int index);
-    // 分表名只允许安全标识符（会被拼进 SQL）
+    // 类型标识合法性校验（安全标识符：小写字母开头）。类型已无分表，form 不再拼进 SQL，
+    // 此处仅作外部输入的格式校验。
     static bool isSafeFormName(const QString &form);
 
     // 创作日期：严格 YYYY-MM-DD（v5 起升格为核心字段 file.creation_date，精度固定、导入必填）
@@ -54,7 +55,7 @@ public:
 
     // 导入执行器（开发文档 5.4 ⑥）：
     // 校验 → 开事务 → 解析创作者 → 插入占位行取 id → 复制入桶 → 生成封面
-    // → 写分表 → 回填 size/桶号 → 提交 → 广播 PackageCreated。
+    // → 回填 size/桶号 → 提交 → 广播 PackageCreated。
     // 任一步失败：回滚并删除本次新建的包文件夹与封面，返回 -1。
     qint64 importPackage(const ImportPlan &plan, AppError *error = nullptr);
 

@@ -1,13 +1,11 @@
 #include "TypePackage.h"
 
-#include <QJsonArray>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QSet>
 
 namespace {
 
-// form 与字段名都会成为 SQL 标识符，限定小写字母开头的安全命名
+// form 会成为 SQL 标识符与目录名，限定小写字母开头的安全命名
 const QRegularExpression kIdentifierPattern(QStringLiteral("^[a-z][a-z0-9_]{0,31}$"));
 const QRegularExpression kVersionPattern(QStringLiteral("^\\d+\\.\\d+\\.\\d+$"));
 
@@ -21,17 +19,6 @@ bool checkIdentifier(const QString &value, const QString &what, QString &error)
 }
 
 } // namespace
-
-bool TypePackage::isSupportedFieldType(const QString &type)
-{
-    static const QSet<QString> kSupported = {
-        QStringLiteral("int"),
-        QStringLiteral("text"),
-        QStringLiteral("date"),     // YYYY / YYYY-MM / YYYY-MM-DD，可空
-        QStringLiteral("creator"),  // 创作者引用，经核心 find-or-create
-    };
-    return kSupported.contains(type);
-}
 
 bool TypePackage::fromJson(const QJsonObject &json, TypePackage &out, QString &error)
 {
@@ -59,50 +46,6 @@ bool TypePackage::fromJson(const QJsonObject &json, TypePackage &out, QString &e
         return false;
     }
 
-    // —— 分表字段 ——
-    const QJsonValue fieldsValue = json.value(QStringLiteral("fields"));
-    if (!fieldsValue.isArray()) {
-        error = QStringLiteral("fields 缺失或不是数组");
-        return false;
-    }
-
-    QList<Field> fields;
-    QSet<QString> fieldNames;
-    const QJsonArray fieldArray = fieldsValue.toArray();
-    for (const QJsonValue &item : fieldArray) {
-        if (!item.isObject()) {
-            error = QStringLiteral("fields 数组元素须为对象");
-            return false;
-        }
-        const QJsonObject fieldObj = item.toObject();
-
-        Field field;
-        field.name = fieldObj.value(QStringLiteral("name")).toString();
-        if (!checkIdentifier(field.name, QStringLiteral("字段名"), error))
-            return false;
-        if (fieldNames.contains(field.name)) {
-            error = QStringLiteral("字段名重复：") + field.name;
-            return false;
-        }
-        fieldNames.insert(field.name);
-
-        field.type = fieldObj.value(QStringLiteral("type")).toString();
-        if (!isSupportedFieldType(field.type)) {
-            error = QStringLiteral("字段 %1 的类型不受支持：%2").arg(field.name, field.type);
-            return false;
-        }
-
-        field.label = fieldObj.value(QStringLiteral("label")).toString();
-        if (field.label.isEmpty()) {
-            error = QStringLiteral("字段 %1 缺少显示标签 label").arg(field.name);
-            return false;
-        }
-
-        field.required = fieldObj.value(QStringLiteral("required")).toBool(false);
-        field.defaultValue = fieldObj.value(QStringLiteral("default"));
-        fields.append(field);
-    }
-
     // —— 包内规范与浏览顺序 ——
     const QJsonValue layoutValue = json.value(QStringLiteral("packageLayout"));
     const QString layoutKind = layoutValue.toObject().value(QStringLiteral("kind")).toString();
@@ -122,7 +65,6 @@ bool TypePackage::fromJson(const QJsonObject &json, TypePackage &out, QString &e
     out.displayName = displayName;
     out.version = static_cast<int>(version);
     out.coreMinVersion = coreMinVersion;
-    out.fields = fields;
     out.packageLayoutKind = layoutKind;
     out.browseOrder = browseOrder;
     return true;
