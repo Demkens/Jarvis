@@ -18,13 +18,13 @@ CreatorService::CreatorService(DbAccess *db)
 {
 }
 
-qint64 CreatorService::resolveOrCreate(const QString &name, int kind, AppError *error)
+qint64 CreatorService::resolveOrCreate(const QString &name, AppError *error)
 {
     const QString trimmed = name.trimmed();
 
     // 空名 → 默认创作者「佚名」（建库/迁移时保证存在，按名解析即可）
     if (trimmed.isEmpty())
-        return resolveOrCreate(anonymousName(), kind, error);
+        return resolveOrCreate(anonymousName(), error);
 
     // 1. 精确名
     AppError nameError;
@@ -62,8 +62,8 @@ qint64 CreatorService::resolveOrCreate(const QString &name, int kind, AppError *
 
     // 3. find-or-create
     qint64 newId = 0;
-    if (!m_db->execute(QStringLiteral("INSERT INTO creator (name, kind) VALUES (:name, :kind)"),
-                       {{QStringLiteral("name"), trimmed}, {QStringLiteral("kind"), kind}},
+    if (!m_db->execute(QStringLiteral("INSERT INTO creator (name) VALUES (:name)"),
+                       {{QStringLiteral("name"), trimmed}},
                        &newId, error))
         return -1;
     return newId;
@@ -119,18 +119,6 @@ bool CreatorService::addAlias(qint64 creatorId, const QString &alias, AppError *
     // 幂等：同一创作者的重复别名视为成功
     return m_db->execute(QStringLiteral("INSERT OR IGNORE INTO alias (id, alias) VALUES (:id, :alias)"),
                          {{QStringLiteral("id"), creatorId}, {QStringLiteral("alias"), trimmed}},
-                         error);
-}
-
-bool CreatorService::setKind(qint64 creatorId, int kind, AppError *error)
-{
-    if (kind < Person || kind > Official) {
-        if (error != nullptr)
-            *error = failValidation(QStringLiteral("kind 取值须为 1/2/3"));
-        return false;
-    }
-    return m_db->execute(QStringLiteral("UPDATE creator SET kind = :kind WHERE id = :id"),
-                         {{QStringLiteral("kind"), kind}, {QStringLiteral("id"), creatorId}},
                          error);
 }
 

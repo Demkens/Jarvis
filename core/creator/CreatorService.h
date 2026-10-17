@@ -16,19 +16,12 @@ class DbAccess;
 class CreatorService
 {
 public:
-    enum Kind
-    {
-        Person = 1,   // 个人
-        Group = 2,    // 团体
-        Official = 3, // 官方
-    };
-
     explicit CreatorService(DbAccess *db);
 
     // 解析创作者：空名 → 默认创作者「佚名」；精确名命中 → 其 id；唯一别名命中 → 正式名 id；
-    // 别名歧义 → Conflict 错误；都未命中 → 新建（kind 默认个人）。
+    // 别名歧义 → Conflict 错误；都未命中 → 新建。
     // 返回 -1 表示出错（error 已填充）。
-    qint64 resolveOrCreate(const QString &name, int kind = Person, AppError *error = nullptr);
+    qint64 resolveOrCreate(const QString &name, AppError *error = nullptr);
 
     // 无创作者时的默认显示名（预置创作者「佚名」）
     static QString anonymousName();
@@ -41,9 +34,6 @@ public:
 
     // 登记别名（幂等：重复登记不算错误）
     bool addAlias(qint64 creatorId, const QString &alias, AppError *error = nullptr);
-
-    // kind 维护（1=个人 2=团体 3=官方）
-    bool setKind(qint64 creatorId, int kind, AppError *error = nullptr);
 
     // 显示名；未找到（含 id<=0）→ 「佚名」兜底
     QString displayName(qint64 creatorId, AppError *error = nullptr) const;

@@ -397,13 +397,13 @@ QVariantMap TypeEngine::writeCreators(qint64 fileId, const QString &names)
     QList<qint64> ids;
     const QStringList namesList = CreatorService::splitNames(names);
     if (namesList.isEmpty()) {
-        const qint64 id = m_creators->resolveOrCreate(QString(), CreatorService::Person, &error);
+        const qint64 id = m_creators->resolveOrCreate(QString(), &error);
         if (id < 0)
             return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
         ids.append(id);
     } else {
         for (const QString &name : namesList) {
-            const qint64 id = m_creators->resolveOrCreate(name, CreatorService::Person, &error);
+            const qint64 id = m_creators->resolveOrCreate(name, &error);
             if (id < 0)
                 return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
             ids.append(id);

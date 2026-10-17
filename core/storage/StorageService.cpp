@@ -189,7 +189,7 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     QList<qint64> creatorIds;
     const QStringList creatorNames = CreatorService::splitNames(plan.creatorName);
     if (creatorNames.isEmpty()) {
-        const qint64 creatorId = m_creators->resolveOrCreate(QString(), CreatorService::Person, error);
+        const qint64 creatorId = m_creators->resolveOrCreate(QString(), error);
         if (creatorId < 0) {
             db.rollback();
             return -1;
@@ -197,7 +197,7 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         creatorIds.append(creatorId);
     } else {
         for (const QString &name : creatorNames) {
-            const qint64 creatorId = m_creators->resolveOrCreate(name, CreatorService::Person, error);
+            const qint64 creatorId = m_creators->resolveOrCreate(name, error);
             if (creatorId < 0) {
                 db.rollback();
                 return -1;

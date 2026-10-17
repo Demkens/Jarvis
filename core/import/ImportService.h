@@ -9,7 +9,7 @@
 class LibraryService;
 class TypePackageManager;
 
-// 导入/导出 QML 门面（开发文档 5.4 / 5.5 / 7.4）。
+// 导入/导出 QML 门面
 // 向导与预处理两通道都归一为 ImportPlan 映射数组，由本服务批量执行；
 // 预处理目录扫描（draw 约定：子文件夹=图集包、根目录散图=单图包、meta.json 可选）在此。
 // 纪律继承 StorageService：核心独占文件系统写操作；失败条目单独报告不阻断其余。

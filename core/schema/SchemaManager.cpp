@@ -34,8 +34,7 @@ const QStringList kCoreBaselineStatements = {
     QStringLiteral(R"(
         CREATE TABLE IF NOT EXISTS creator (
             id   INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT    NOT NULL UNIQUE,
-            kind INTEGER NOT NULL DEFAULT 1
+            name TEXT    NOT NULL UNIQUE
         ))"),
     QStringLiteral(R"(
         CREATE TABLE IF NOT EXISTS alias (
@@ -66,7 +65,7 @@ const QStringList kCoreBaselineStatements = {
             FOREIGN KEY (file_id) REFERENCES file(id) ON DELETE CASCADE
         ))"),
     // id=0 统一为「佚名」：无创作者的数据包一律兜底到它
-    QStringLiteral("INSERT OR IGNORE INTO creator (id, name, kind) VALUES (0, '佚名', 1)"),
+    QStringLiteral("INSERT OR IGNORE INTO creator (id, name) VALUES (0, '佚名')"),
     // 创作者多对多关联表：sort_order=0 为主要创作者，1、2… 为次要；file_id 级联删一并清理
     QStringLiteral(R"(
         CREATE TABLE IF NOT EXISTS file_creator (

@@ -1,3 +1,10 @@
+// file 总表服务
+// 包查询与标题修改、评分算法、浏览记忆读写、包删除（含实体清理）
+// 纪律：
+// - 评分入口唯一（类型包不得直写 score）；0 = 未评分；
+// - 浏览记忆写回不触碰 file.updated_time；
+// - 删除顺序：事务删 db 行（关联表靠外键级联）→ 删包文件夹 → 删封面。
+
 #pragma once
 
 #include <QList>
@@ -11,12 +18,6 @@ class EventBus;
 class LibraryService;
 class StorageService;
 
-// file 总表服务（开发文档 3.4 / 6.2 / 6.4 / 6.9 / 6.10）：
-// 包查询与标题修改、评分算法、浏览记忆读写、包删除（含实体清理）。
-// 纪律：
-// - 评分入口唯一（类型包不得直写 score）；0 = 未评分；
-// - 浏览记忆写回不触碰 file.updated_time；
-// - 删除顺序：事务删 db 行（关联表靠外键级联）→ 删包文件夹 → 删封面。
 class PackageService
 {
 public:
