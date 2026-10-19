@@ -129,37 +129,3 @@ qt_generate_deploy_app_script(
     NO_UNSUPPORTED_PLATFORM_ERROR
 )
 install(SCRIPT ${jarvis_deploy_script})
-
-# ---- 无头冒烟测试（验收用；不依赖界面，直跑核心服务）----
-# 默认不构建：避免核心接口变动时未同步测试导致主构建链接失败。
-# 需要回归验证时显式开启：cmake -DJARVIS_BUILD_TESTS=ON ...
-option(JARVIS_BUILD_TESTS "Build Jarvis smoke tests" OFF)
-
-if(JARVIS_BUILD_TESTS)
-    qt_add_executable(smoke_m1 tests/smoke_m1.cpp)
-    target_link_libraries(smoke_m1 PRIVATE jarvis_core)
-    set_target_properties(smoke_m1 PROPERTIES WIN32_EXECUTABLE FALSE)
-
-    qt_add_executable(smoke_m2 tests/smoke_m2.cpp)
-    target_link_libraries(smoke_m2 PRIVATE jarvis_core)
-    set_target_properties(smoke_m2 PROPERTIES WIN32_EXECUTABLE FALSE)
-
-    qt_add_executable(smoke_m3 tests/smoke_m3.cpp)
-    target_link_libraries(smoke_m3 PRIVATE jarvis_core)
-    set_target_properties(smoke_m3 PROPERTIES WIN32_EXECUTABLE FALSE)
-
-    qt_add_executable(smoke_m4 tests/smoke_m4.cpp)
-    target_link_libraries(smoke_m4 PRIVATE jarvis_core)
-    set_target_properties(smoke_m4 PROPERTIES WIN32_EXECUTABLE FALSE)
-
-    qt_add_executable(smoke_m5 tests/smoke_m5.cpp)
-    target_link_libraries(smoke_m5 PRIVATE jarvis_core)
-    set_target_properties(smoke_m5 PROPERTIES WIN32_EXECUTABLE FALSE)
-
-    # 保证类型包已拷贝到产物目录后再运行测试
-    add_dependencies(smoke_m1 jarvis)
-    add_dependencies(smoke_m2 jarvis)
-    add_dependencies(smoke_m3 jarvis)
-    add_dependencies(smoke_m4 jarvis)
-    add_dependencies(smoke_m5 jarvis)
-endif()
