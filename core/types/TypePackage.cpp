@@ -1,5 +1,6 @@
 #include "TypePackage.h"
 
+#include <QDebug>
 #include <QJsonObject>
 #include <QRegularExpression>
 
@@ -67,5 +68,12 @@ bool TypePackage::fromJson(const QJsonObject &json, TypePackage &out, QString &e
     out.coreMinVersion = coreMinVersion;
     out.packageLayoutKind = layoutKind;
     out.browseOrder = browseOrder;
+
+    // stats：本期只解析不渲染。字段缺失即空；存在但不是 JSON 对象时仅告警，
+    // 不影响类型包加载（扩展点不应成为加载门槛）
+    const QJsonValue statsValue = json.value(QStringLiteral("stats"));
+    out.stats = statsValue.isObject() ? statsValue.toObject().toVariantMap() : QVariantMap{};
+    if (!statsValue.isObject() && !statsValue.isUndefined() && !statsValue.isNull())
+        qWarning().noquote() << "[types]" << form << "stats 声明不是 JSON 对象，已忽略";
     return true;
 }

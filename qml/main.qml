@@ -87,6 +87,8 @@ Item {
                     StatisticsPage {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        // 是否位于前台：统计页据此在切回时惰性重算（避免后台反复聚合）
+                        foreground: pageIndex === 1
                     }
                     NotePage {
                         Layout.fillWidth: true

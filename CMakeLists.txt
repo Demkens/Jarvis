@@ -5,7 +5,10 @@ project(Jarvis VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Sql)
+# 图表用 Qt Graphs（M7 统计页）。其 2D 渲染基于 Qt Quick Shapes，与纯 QML 应用同路，
+# 不需要 Widgets / QApplication（旧的 Qt Charts 因 2D 走 Graphics View 才必须带上二者，
+# 且已自 Qt 6.10 起废弃），故此处不再请求 Charts 与 Widgets 组件。
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Sql Graphs)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -29,6 +32,7 @@ set (CORE_HEADERS
     core/package/PackageService.h
     core/schema/SchemaManager.h
     core/settings/SettingsService.h
+    core/stats/StatsService.h
     core/storage/StorageService.h
     core/tag/TagService.h
     core/types/TypeEngine.h
@@ -54,6 +58,7 @@ add_library(jarvis_core STATIC
     core/tag/TagService.cpp
     core/package/PackageService.cpp
     core/settings/SettingsService.cpp
+    core/stats/StatsService.cpp
     core/import/ImportService.cpp
     core/types/TypeEngine.cpp
     core/ui/PackageViewContext.cpp
@@ -93,16 +98,26 @@ qt_add_qml_module(jarvis
         qml/include/TagTree.qml
         qml/include/ToolsMenu.qml
         qml/include/AppDialogs.qml
+        qml/include/StatCard.qml
+        qml/include/TypePieChart.qml
+        qml/include/CreatorBarChart.qml
+        qml/include/MonthLineChart.qml
+        qml/include/TagBarChart.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/FilterDialog.qml
         qml/dialogs/EditPackageDialog.qml
         qml/dialogs/TagManagerDialog.qml
+        qml/dialogs/TagPickDialog.qml
         qml/windows/ViewerWindow.qml
         qml/windows/LibraryManagerWindow.qml
 )
 
 target_link_libraries(jarvis PRIVATE jarvis_core)
+
+# Qt Graphs：统计页四张图用其 QML API（GraphsView/PieSeries/BarSeries/LineSeries）。
+# 纯 QML 渲染路径，不引入 Widgets，故 main 仍用 QGuiApplication。
+target_link_libraries(jarvis PRIVATE Qt6::Graphs)
 
 # 图标等通用图片资源：作为源加入 jarvis，由 AUTORCC 编译（按 qrc 内部 prefix/alias）
 target_sources(jarvis PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/images.qrc")

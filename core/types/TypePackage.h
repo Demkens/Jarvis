@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QVariantMap>
 
 class QJsonObject;
 
@@ -17,6 +18,9 @@ public:
     QString coreMinVersion;        // 依赖的最低核心版本
     QString packageLayoutKind;     // 包内文件规范（draw = imageSequence）
     QString browseOrder;           // 预设浏览顺序声明（draw = sequence）
+    // type.json 的 stats 字段声明（结构由类型包自定）。本期只解析不渲染，
+    // 作为后续统计维度的扩展点；字段缺失或非法时保持为空，不影响类型包加载。
+    QVariantMap stats;
 
     // 包内资源文件绝对路径（发现阶段由 TypePackageManager 填充）
     QString dirPath;

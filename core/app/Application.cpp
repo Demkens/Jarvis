@@ -10,6 +10,7 @@
 #include "library/LibraryService.h"
 #include "package/PackageService.h"
 #include "settings/SettingsService.h"
+#include "stats/StatsService.h"
 #include "storage/StorageService.h"
 #include "tag/TagService.h"
 #include "types/TypeEngine.h"
@@ -44,6 +45,10 @@ bool Application::initialize(const QString &libraryOverride)
     m_import = std::make_unique<ImportService>(m_library.get(), m_storage.get(),
                                                m_typePackages.get(), this);
 
+    // M7 数据统计：只读聚合门面，借库/包/标签三个服务取数，订阅事件置脏（懒重算）
+    m_stats = std::make_unique<StatsService>(m_library.get(), m_packages.get(), m_tags.get(),
+                                             m_eventBus.get(), this);
+
     // 补全存量行的封面长宽比（瀑布流布局用）：库打开/切换时各跑一次（无待补行时开销极小）
     m_storage->backfillAspectRatios();
     connect(m_library.get(), &LibraryService::openChanged, this, [this]() {
@@ -70,4 +75,5 @@ void Application::bindToQml(QQmlApplicationEngine &engine)
     engine.rootContext()->setContextProperty(QStringLiteral("libraryService"), m_library.get());
     engine.rootContext()->setContextProperty(QStringLiteral("typeEngine"), m_typeEngine.get());
     engine.rootContext()->setContextProperty(QStringLiteral("importService"), m_import.get());
+    engine.rootContext()->setContextProperty(QStringLiteral("statsService"), m_stats.get());
 }

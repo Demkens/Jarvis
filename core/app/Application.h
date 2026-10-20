@@ -1,6 +1,6 @@
 // 组合根, 全程序唯一创建并组装所有服务的地方: 
 // 1. 通过initialize函数创建并装配全部核心服务
-// 2. 通过bindToQml函数向 QML 注入4个服务的上下文
+// 2. 通过bindToQml函数向 QML 注入各服务的上下文（类型包/库/类型引擎/导入/统计）
 
 #pragma once
 
@@ -16,6 +16,7 @@ class ImportService;
 class PackageService;
 class LibraryService;
 class SettingsService;
+class StatsService;
 class StorageService;
 class TagService;
 class TypeEngine;
@@ -45,5 +46,6 @@ private:
     std::unique_ptr<ImportService> m_import;
     std::unique_ptr<TagService> m_tags;
     std::unique_ptr<SettingsService> m_settings;
+    std::unique_ptr<StatsService> m_stats;
     std::unique_ptr<TypeEngine> m_typeEngine;
 };
