@@ -211,6 +211,51 @@ Item {
                 }
             }
 
+            // ---- 活跃热度（热力图）----
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 190
+                color: "#f7f9fc"
+                border.color: "#d5dbe6"
+                border.width: 1
+                radius: 6
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "活跃热度"
+                            font.pixelSize: 13
+                            font.bold: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // 汇总口径：导入计 1、改过再计 1，同日去重，只统计近 12 个月窗口内
+                        Text {
+                            text: "近 12 个月 · 共 "
+                                  + String((page.snap.heatmap ? page.snap.heatmap.total : 0) || 0)
+                                  + " 次活跃"
+                            font.pixelSize: 11
+                            color: "#8a94a6"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
+
+                    HeatmapChart {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        heatmap: page.snap.heatmap || null
+                    }
+                }
+            }
+
             // ---- 按类型分布（饼图）----
             Rectangle {
                 Layout.fillWidth: true

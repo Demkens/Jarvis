@@ -1,6 +1,9 @@
 #include "stats/StatsService.h"
 
+#include <QDate>
+#include <QDateTime>
 #include <QDebug>
+#include <QMap>
 
 #include "events/EventBus.h"
 #include "library/DbAccess.h"
@@ -13,6 +16,9 @@ namespace {
 // 按创作者柱状图保留的条目上限，其余合并为一项「其他」，避免长尾压扁图形
 constexpr int kCreatorTopN = 10;
 
+// 活跃热力图的时间跨度（月）：滚动展示最近 12 个月，列按自然周对齐
+constexpr int kHeatmapMonths = 12;
+
 // 空白快照：库未打开时的统一形状（各数组为空，计数为 0）
 QVariantMap emptySnapshot()
 {
@@ -23,6 +29,12 @@ QVariantMap emptySnapshot()
         {QStringLiteral("byType"), QVariantList{}},
         {QStringLiteral("byCreator"), QVariantList{}},
         {QStringLiteral("byMonth"), QVariantList{}},
+        {QStringLiteral("heatmap"), QVariantMap{{QStringLiteral("total"), 0},
+                                               {QStringLiteral("max"), 0},
+                                               {QStringLiteral("cols"), 0},
+                                               {QStringLiteral("start"), QString()},
+                                               {QStringLiteral("end"), QString()},
+                                               {QStringLiteral("cells"), QVariantList{}}}},
     };
 }
 
@@ -183,7 +195,83 @@ QVariantMap StatsService::buildSnapshot(AppError *error) const
     }
     out.insert(QStringLiteral("byMonth"), byMonth);
 
+    // ⑤ 活跃热度（热力图）：按本地日期统计「导入过或修改过」的数据包数
+    const QVariantMap heatmap = buildHeatmap(&local);
+    if (!local.ok())
+        return fail(local);
+    out.insert(QStringLiteral("heatmap"), heatmap);
+
     return out;
+}
+
+QVariantMap StatsService::buildHeatmap(AppError *error) const
+{
+    // 时间窗口：滚动最近 12 个月。列按自然周对齐——起点回退到 12 个月前那天所在周的周一，
+    // 终点前进到本周周日（dayOfWeek(): 1=周一 … 7=周日），使每列恰为「周一→周日」。
+    const QDate today = QDate::currentDate();
+    const QDate rawStart = today.addMonths(-kHeatmapMonths);
+    const QDate start = rawStart.addDays(1 - rawStart.dayOfWeek());
+    const QDate end = today.addDays(7 - today.dayOfWeek());
+    const int cols = static_cast<int>(start.daysTo(end)) / 7 + 1;
+
+    // 逐行取两张时间列即可（均为 UTC ISO-8601，格式见 common/Timestamps.h）。
+    // 不用 SQL 做时区换算：Qt 自带 SQLite 的 'localtime' 语义依赖版本，改在 C++ 侧换算，
+    // 与资源页「入库时间」筛选的既有做法一致。
+    const QList<QVariantMap> rows = m_library->dbAccess().select(
+        QStringLiteral("SELECT created_time, updated_time FROM file"), {}, error);
+    if (error != nullptr && !error->ok())
+        return {};
+
+    // 计数口径（用户确认）：导入当天计 1；确改过（updated > created）时，修改当天另计 1；
+    // 两者落在同一天只计 1 次。修改只留最近一次，故同一包最多贡献 2 天。
+    QMap<QDate, int> bucket;
+    for (const QVariantMap &row : rows) {
+        const QDateTime created = QDateTime::fromString(
+            row.value(QStringLiteral("created_time")).toString(), Qt::ISODate);
+        if (!created.isValid())
+            continue; // 时间戳异常：跳过该行，不中断整次统计
+
+        const QDate createdDay = created.toLocalTime().date();
+        if (createdDay >= start && createdDay <= end)
+            ++bucket[createdDay];
+
+        const QDateTime updated = QDateTime::fromString(
+            row.value(QStringLiteral("updated_time")).toString(), Qt::ISODate);
+        if (updated.isValid() && updated > created) {
+            const QDate updatedDay = updated.toLocalTime().date();
+            if (updatedDay >= start && updatedDay <= end && updatedDay != createdDay)
+                ++bucket[updatedDay];
+        }
+    }
+
+    // 铺满整张网格（含无活跃的空白格与本周尚未到来的日期），QML 据此只需按 week/dow 定坐标，
+    // 不做任何日期算术；cells 顺序为「列优先」——索引 week*7 + dow，故 dow=0 即该列周一。
+    QVariantList cells;
+    cells.reserve(cols * 7);
+    int total = 0;
+    int max = 0;
+    for (int week = 0; week < cols; ++week) {
+        for (int dow = 0; dow < 7; ++dow) {
+            const QDate date = start.addDays(week * 7 + dow);
+            const int count = bucket.value(date, 0);
+            total += count;
+            max = qMax(max, count);
+            cells.append(QVariantMap{
+                {QStringLiteral("week"), week},
+                {QStringLiteral("dow"), dow},
+                {QStringLiteral("date"), date.toString(QStringLiteral("yyyy-MM-dd"))},
+                {QStringLiteral("count"), count}});
+        }
+    }
+
+    return {
+        {QStringLiteral("total"), total},
+        {QStringLiteral("max"), max},
+        {QStringLiteral("cols"), cols},
+        {QStringLiteral("start"), start.toString(QStringLiteral("yyyy-MM-dd"))},
+        {QStringLiteral("end"), end.toString(QStringLiteral("yyyy-MM-dd"))},
+        {QStringLiteral("cells"), cells},
+    };
 }
 
 QVariantMap StatsService::tagStats(const QVariantList &tagIds)

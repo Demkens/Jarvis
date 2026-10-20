@@ -103,6 +103,7 @@ qt_add_qml_module(jarvis
         qml/include/CreatorBarChart.qml
         qml/include/MonthLineChart.qml
         qml/include/TagBarChart.qml
+        qml/include/HeatmapChart.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/FilterDialog.qml

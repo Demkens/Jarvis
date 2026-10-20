@@ -2,6 +2,7 @@
 // 职责：
 // - 汇总当前库的规模指标（数据包总数 / 已登记类型数 / 已登记创作者数）；
 // - 汇总三个维度的分布（按类型、按创作者 Top10+其他、按创作月份）；
+// - 汇总活跃热度（热力图）：按日统计「导入过或修改过」的数据包数量；
 // - 按选中标签做「标签计量」（命中该标签或其全部子孙的包数，语义与资源页筛选一致）。
 // 纪律：
 // - 只读：不写库、不发事件、不持有连接（借 LibraryService 的 DbAccess）；
@@ -37,11 +38,12 @@ public:
 
     bool stale() const { return m_stale; }
 
-    // 读基线快照（总数/类型数/创作者数 + 按类型/按创作者/按创作月份分布）。
+    // 读基线快照（总数/类型数/创作者数 + 按类型/按创作者/按创作月份分布 + 活跃热度）。
     // 输入: 无；输出: {ok, message?, total, typeCount, creatorCount,
     //                 byType:[{name,count}],
     //                 byCreator:[{name,count,others?}],
-    //                 byMonth:[{month,count}]}。
+    //                 byMonth:[{month,count}],
+    //                 heatmap:{total,max,cols,start,end,cells:[{week,dow,date,count}]}}。
     // 缓存已脏（有事件置位）时重算，否则直接返回缓存。
     // 库未打开时返回全零快照（ok=true，各项为空），由 QML 自行展示空态。
     Q_INVOKABLE QVariantMap snapshot();
@@ -64,8 +66,11 @@ private:
     void markStale();
     // 重算基线快照并为成功结果建立缓存（同时清除脏标记）
     QVariantMap recompute();
-    // 执行六条只读聚合 SQL 并组装快照（不做缓存判断）
+    // 执行全部只读聚合 SQL 并组装快照（不做缓存判断）
     QVariantMap buildSnapshot(AppError *error) const;
+    // 计算活跃热度（热力图）：逐行读 file 的创建/修改时间，按本地日期分桶后铺成周×七的网格。
+    // 输入: error —— 出错时的转述出口（可为空）；输出: {total,max,cols,start,end,cells}。
+    QVariantMap buildHeatmap(AppError *error) const;
 
     LibraryService *m_library;
     PackageService *m_packages;
