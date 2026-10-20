@@ -1,3 +1,13 @@
+// 全局设置服务: 把原先硬编码的配置项落库为 envs/settings.json
+// 与 LibraryConfig 同款持久化模式（QJsonObject + QSaveFile 原子写），全局生效、不随库
+// 项 / 默认 / 范围：
+// - pageSize           每页数量，默认 50，范围 10–200
+// - scoreRecentWeight  评分权重(0–100%)，默认 60，范围 0–100（存整数百分比，应用侧转 double）
+// - exportDir          默认导出位置（标签/数据包/库导出弹窗的初始目录），默认系统「下载」目录
+// 纪律：
+// - 文件缺失 → 全默认值（首次启动）；解析失败 → 置 error 返回 false（调用方回退默认值，不阻塞启动）；
+// - setter 内部 clamp 到范围，不依赖调用方先校验，JSON 里越界值也被收拢；
+// - 本类只负责读写与范围约束，不持有其他服务；新值如何生效由调用方（Application/TypeEngine）负责。
 #pragma once
 
 #include <QString>
@@ -7,20 +17,14 @@
 
 class AppPaths;
 
-// 全局设置服务（M5）：把原先硬编码的配置项落库为 envs/settings.json。
-// 与 LibraryConfig 同款持久化模式（QJsonObject + QSaveFile 原子写），全局生效、不随库。
-// 项 / 默认 / 范围：
-// - pageSize           每页数量，默认 50，范围 10–200
-// - scoreRecentWeight  评分权重(0–100%)，默认 60，范围 0–100（存整数百分比，应用侧转 double）
-// 纪律：
-// - 文件缺失 → 全默认值（首次启动）；解析失败 → 置 error 返回 false（调用方回退默认值，不阻塞启动）；
-// - setter 内部 clamp 到范围，不依赖调用方先校验，JSON 里越界值也被收拢；
-// - 本类只负责读写与范围约束，不持有其他服务；新值如何生效由调用方（Application/TypeEngine）负责。
 class SettingsService
 {
 public:
     // envs 根下 settings.json（与 config.json 同级、不随库）
     static QString defaultPath(const AppPaths *paths);
+
+    // 默认导出位置的兜底值：系统「下载」目录；取不到回退「主目录」→ 可执行文件旁
+    static QString defaultExportDir();
 
     // 输入 path：读取并覆盖内存值；缺文件按默认值返回 true，解析失败返回 false 并置 error
     bool load(const QString &path, AppError *error = nullptr);
@@ -34,7 +38,12 @@ public:
     int scoreRecentWeight() const { return m_scoreRecentWeight; }
     void setScoreRecentWeight(int v) { m_scoreRecentWeight = qBound(0, v, 100); }
 
+    QString exportDir() const { return m_exportDir; }
+    // 输入 v：设置默认导出位置；空白串视为"未设置"（存空串），否则归一化为 UNIX 风格路径
+    void setExportDir(const QString &v);
+
 private:
     int m_pageSize = 50;             // 每页数量
     int m_scoreRecentWeight = 60;    // 评分权重(%)，0–100
+    QString m_exportDir;             // 默认导出位置（空串=未设置）
 };

@@ -27,14 +27,40 @@ Item {
     function openEditPackage(id) { editDialog.openFor(id) }
     function openExport(id) {
         _exportTargetId = id
+        // 默认定位到设置里的默认导出位置（未设置则不干预，用系统默认目录）
+        const dirUrl = typeEngine.exportDirUrl()
+        if (dirUrl !== "")
+            exportFolderPicker.currentFolder = dirUrl
         exportFolderPicker.open()
     }
     // 设置弹窗（顶栏设置按钮 → Main → 此处）
     function openSettings() { settingsDialog.open() }
     // 标签管理弹窗（顶栏「工具 → 标签管理…」→ Main → 此处）
     function openTagManager() { tagManagerDialog.openManager() }
+    // 标签导出（顶栏「工具 → 标签导出…」→ Main → 此处）：直接写入默认导出位置，无弹窗
+    function exportTags() {
+        const result = typeEngine.exportTags()
+        if (result && result.ok)
+            console.log("[tag] 已导出标签到: " + result.path)
+        else
+            console.warn("[tag] 标签导出失败: " + ((result && result.message) || "未知错误"))
+    }
+    // 标签导入（顶栏「工具 → 标签导入…」→ Main → 此处）：选文件后合并进现有标签树
+    function importTags() {
+        const dirUrl = typeEngine.exportDirUrl()
+        if (dirUrl !== "")
+            tagFilePicker.currentFolder = dirUrl
+        tagFilePicker.open()
+    }
     // 导入弹窗直达指定步骤（文件菜单选定类型后 → Main → 此处）
     function startImport(form, channel) { importDialog.start(form, channel) }
+    // 设置弹窗的「默认导出位置」选择：打开选择器（默认定位到当前设置值），选定后回填对话框
+    function pickSettingsExportDir() {
+        const dirUrl = typeEngine.exportDirUrl()
+        if (dirUrl !== "")
+            settingsExportPicker.currentFolder = dirUrl
+        settingsExportPicker.open()
+    }
 
     // ---- 实例定义与回调 ----
     ImportDialog {
@@ -44,6 +70,8 @@ Item {
     SettingsDialog {
         id: settingsDialog
         onAccepted: appDialogs.settingsAccepted()
+        // 设置里的「默认导出位置」选择：由本组件顶层选择器完成（Popup 内不嵌套原生选择器）
+        onExportDirPickRequested: appDialogs.pickSettingsExportDir()
     }
 
     ViewerWindow {
@@ -82,6 +110,37 @@ Item {
                 console.log("[storage] 已导出 " + result.count + " 个文件到: " + local)
             else
                 console.warn("[storage] 导出失败: " + result.message)
+        }
+    }
+
+    // 标签导入：选择标签文件（*.json）后合并进现有标签树
+    FileDialog {
+        id: tagFilePicker
+        title: "选择标签文件"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["标签文件 (*.json)"]
+        onAccepted: {
+            var local = String(selectedFile)
+            if (local.indexOf("file:///") === 0)
+                local = local.substring("file:///".length)
+            local = decodeURIComponent(local) // %20 等还原为真实路径
+            const result = typeEngine.importTags(local)
+            if (result && result.ok)
+                console.log("[tag] 标签导入完成：新增 " + result.created + "，复用 " + result.merged)
+            else
+                console.warn("[tag] 标签导入失败: " + ((result && result.message) || "未知错误"))
+        }
+    }
+
+    // 设置弹窗的「默认导出位置」选择器（选定后回填设置对话框，不在此落盘）
+    FolderDialog {
+        id: settingsExportPicker
+        title: "选择默认导出位置"
+        onAccepted: {
+            var local = String(selectedFolder)
+            if (local.indexOf("file:///") === 0)
+                local = local.substring("file:///".length)
+            settingsDialog.setExportDirPicked(decodeURIComponent(local))
         }
     }
 }

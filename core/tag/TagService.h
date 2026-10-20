@@ -1,8 +1,10 @@
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "common/AppError.h"
 
@@ -51,11 +53,26 @@ public:
     // 单标签显示名；不存在（含 id <= 0）返回空串
     QString nameOf(qint64 tagId, AppError *error = nullptr) const;
 
+    // ---- 标签树导入/导出（JSON 文件；仅名称与层级，不含与数据包的绑定关系）----
+    // 导出当前标签树到 dir 下的 tags_yyyyMMdd_HHmmss.json（嵌套结构，见 importFromJson 格式）。
+    // dir 为空返回 Validation；目录不存在则创建。成功时 outPath（可空）输出实际文件路径。
+    bool exportToJson(const QString &dir, QString *outPath, AppError *error = nullptr) const;
+
+    // 从 JSON 文件导入标签树并合并进现有体系：同层同名复用已有标签，其子标签并入其下（幂等，可重复导入）。
+    // 事务执行，任一节点失败整体回滚；成功时 created/merged（可空）输出新建/复用计数。
+    // 文件不存在或格式非法返回 Validation，不写库。
+    bool importFromJson(const QString &path, int *created, int *merged, AppError *error = nullptr);
+
 private:
     // 标签是否存在
     bool tagExists(qint64 tagId, AppError *error = nullptr) const;
     // 逐级向上收集祖先 id（不含自身），顺序为由近及远
     QList<qint64> ancestorIds(qint64 tagId, AppError *error = nullptr) const;
+    // 递归导入单个节点（node 形如 {name, children:[...]}）；parentId=0 为顶级。
+    // existing 为「父 id + 名称 → 标签 id」的同层同名索引：导入前预载现有标签，导入中新建的节点即时登记，
+    // 从而在同一事务内（写连接未提交、读连接不可见的窗口内）也能正确去重。
+    bool importNode(const QVariantMap &node, qint64 parentId, int *created, int *merged,
+                    QHash<QString, qint64> &existing, AppError *error = nullptr);
 
     DbAccess *m_db;
 };

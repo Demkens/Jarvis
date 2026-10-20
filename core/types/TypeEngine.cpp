@@ -197,7 +197,8 @@ QVariantMap TypeEngine::settings() const
 {
     return {{QStringLiteral("ok"), true},
             {QStringLiteral("pageSize"), m_settings->pageSize()},
-            {QStringLiteral("scoreRecentWeight"), m_settings->scoreRecentWeight()}};
+            {QStringLiteral("scoreRecentWeight"), m_settings->scoreRecentWeight()},
+            {QStringLiteral("exportDir"), m_settings->exportDir()}};
 }
 
 QVariantMap TypeEngine::saveSettings(const QVariantMap &values)
@@ -208,6 +209,13 @@ QVariantMap TypeEngine::saveSettings(const QVariantMap &values)
         next.setPageSize(values.value(QStringLiteral("pageSize")).toInt());
     if (values.contains(QStringLiteral("scoreRecentWeight")))
         next.setScoreRecentWeight(values.value(QStringLiteral("scoreRecentWeight")).toInt());
+    if (values.contains(QStringLiteral("exportDir"))) {
+        // 导出位置不接受空白：留空将导致标签/数据包导出无处可写，故当场拒绝并回显
+        if (values.value(QStringLiteral("exportDir")).toString().trimmed().isEmpty())
+            return {{QStringLiteral("ok"), false},
+                    {QStringLiteral("message"), QStringLiteral("请设置默认导出位置")}};
+        next.setExportDir(values.value(QStringLiteral("exportDir")).toString());
+    }
 
     AppError error;
     if (!next.save(SettingsService::defaultPath(m_paths), &error))
@@ -217,6 +225,35 @@ QVariantMap TypeEngine::saveSettings(const QVariantMap &values)
     *m_settings = next;
     m_packageService->setScoreRecentWeight(next.scoreRecentWeight() / 100.0);
     return {{QStringLiteral("ok"), true}};
+}
+
+QString TypeEngine::exportDirUrl() const
+{
+    const QString dir = m_settings->exportDir();
+    return dir.isEmpty() ? QString() : QUrl::fromLocalFile(dir).toString();
+}
+
+QVariantMap TypeEngine::exportTags()
+{
+    AppError error;
+    QString path;
+    if (!m_tags->exportToJson(m_settings->exportDir(), &path, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    return {{QStringLiteral("ok"), true}, {QStringLiteral("path"), path}};
+}
+
+QVariantMap TypeEngine::importTags(const QString &path)
+{
+    int created = 0;
+    int merged = 0;
+    AppError error;
+    if (!m_tags->importFromJson(path, &created, &merged, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    // 结构变更后刷新缓存，供标签管理/筛选等 UI 立即看到新标签
+    refreshTags();
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("created"), created},
+            {QStringLiteral("merged"), merged}};
 }
 
 QVariantMap TypeEngine::updateTitle(qint64 fileId, const QString &title)

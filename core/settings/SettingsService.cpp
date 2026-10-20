@@ -1,11 +1,13 @@
 #include "settings/SettingsService.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <QStandardPaths>
 
 #include "library/AppPaths.h"
 
@@ -14,11 +16,29 @@ QString SettingsService::defaultPath(const AppPaths *paths)
     return paths->envsRoot() + QStringLiteral("/settings.json");
 }
 
+QString SettingsService::defaultExportDir()
+{
+    // 优先系统「下载」目录（用户最容易找到导出的文件），依次回退到主目录、可执行文件旁
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (dir.isEmpty())
+        dir = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    if (dir.isEmpty())
+        dir = QCoreApplication::applicationDirPath();
+    return QDir::cleanPath(dir);
+}
+
+void SettingsService::setExportDir(const QString &v)
+{
+    const QString trimmed = v.trimmed();
+    m_exportDir = trimmed.isEmpty() ? QString() : QDir::cleanPath(trimmed);
+}
+
 bool SettingsService::load(const QString &path, AppError *error)
 {
     // 先复位为默认值：重载（重建实例/测试）不会残留上次的修改
     m_pageSize = 50;
     m_scoreRecentWeight = 60;
+    m_exportDir = defaultExportDir();
 
     QFile file(path);
     if (!file.exists())
@@ -44,6 +64,10 @@ bool SettingsService::load(const QString &path, AppError *error)
     // setter 内部 clamp：JSON 中出现越界值也被收拢到范围
     setPageSize(root.value(QStringLiteral("pageSize")).toInt(m_pageSize));
     setScoreRecentWeight(root.value(QStringLiteral("scoreRecentWeight")).toInt(m_scoreRecentWeight));
+    // 导出位置：缺键或空串 → 保留默认值（首次启动即写入默认下载目录）
+    const QString exportDir = root.value(QStringLiteral("exportDir")).toString().trimmed();
+    if (!exportDir.isEmpty())
+        setExportDir(exportDir);
     return true;
 }
 
@@ -55,6 +79,7 @@ bool SettingsService::save(const QString &path, AppError *error) const
     QJsonObject root;
     root.insert(QStringLiteral("pageSize"), m_pageSize);
     root.insert(QStringLiteral("scoreRecentWeight"), m_scoreRecentWeight);
+    root.insert(QStringLiteral("exportDir"), m_exportDir);
 
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly)) {

@@ -3,7 +3,15 @@
 #include <algorithm>
 #include <functional>
 
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QSaveFile>
 #include <QSet>
 #include <QVariantMap>
 
@@ -29,6 +37,54 @@ bool failed(const AppError &local, AppError *out)
     if (out != nullptr)
         *out = local;
     return true;
+}
+
+// 导出序列化：按「父 id → 子行列表」的分组递归构造嵌套 JSON 数组（结构与层级，不含绑定）
+QJsonArray buildNodes(const QHash<qint64, QList<QVariantMap>> &children, qint64 parentId)
+{
+    QJsonArray array;
+    const QList<QVariantMap> kids = children.value(parentId);
+    for (const QVariantMap &kid : kids) {
+        QJsonObject node;
+        node.insert(QStringLiteral("name"), kid.value(QStringLiteral("name")).toString());
+        node.insert(QStringLiteral("children"),
+                    buildNodes(children, kid.value(QStringLiteral("id")).toLongLong()));
+        array.append(node);
+    }
+    return array;
+}
+
+// 导入前置校验：整棵节点树须为「对象 + 非空 name + 可选的数组 children」，非法即整体拒绝（不写库）
+bool validateTagNodes(const QJsonArray &nodes, AppError *error)
+{
+    for (const QJsonValue &value : nodes) {
+        if (!value.isObject()) {
+            if (error != nullptr)
+                *error = failValidation(QStringLiteral("标签文件格式非法：节点须为对象"));
+            return false;
+        }
+        const QJsonObject node = value.toObject();
+        if (node.value(QStringLiteral("name")).toString().trimmed().isEmpty()) {
+            if (error != nullptr)
+                *error = failValidation(QStringLiteral("标签文件格式非法：存在名称为空的标签"));
+            return false;
+        }
+        const QJsonValue kids = node.value(QStringLiteral("children"));
+        if (!kids.isUndefined() && !kids.isArray()) {
+            if (error != nullptr)
+                *error = failValidation(QStringLiteral("标签文件格式非法：children 须为数组"));
+            return false;
+        }
+        if (kids.isArray() && !validateTagNodes(kids.toArray(), error))
+            return false;
+    }
+    return true;
+}
+
+// 同层同名索引键：父 id + 名称（parentId 为数字前缀，不存在歧义）
+QString taggedKey(qint64 parentId, const QString &name)
+{
+    return QString::number(parentId) + QLatin1Char('|') + name;
 }
 
 } // namespace
@@ -347,4 +403,199 @@ QString TagService::nameOf(qint64 tagId, AppError *error) const
         return QString();
     return m_db->scalar(QStringLiteral("SELECT name FROM tag WHERE id = :id"),
                         {{QStringLiteral("id"), tagId}}, error).toString();
+}
+
+bool TagService::exportToJson(const QString &dir, QString *outPath, AppError *error) const
+{
+    const QString target = dir.trimmed();
+    if (target.isEmpty()) {
+        if (error != nullptr)
+            *error = failValidation(QStringLiteral("未设置默认导出位置"));
+        return false;
+    }
+    if (!QDir().mkpath(target)) {
+        if (error != nullptr)
+            *error = AppError::fail(
+                AppError::Io,
+                QStringLiteral("导出目录无法创建：%1").arg(QDir::toNativeSeparators(target)));
+        return false;
+    }
+
+    // 一次性读全量标签并按父分组（排序与 tree() 一致，导出顺序即 UI 顺序）
+    AppError local;
+    const QList<QVariantMap> rows = m_db->select(
+        QStringLiteral("SELECT id, parent_id, name FROM tag ORDER BY name COLLATE NOCASE"),
+        {}, &local);
+    if (failed(local, error))
+        return false;
+
+    QHash<qint64, QList<QVariantMap>> children;
+    for (const QVariantMap &row : rows) {
+        const qint64 parent = row.value(QStringLiteral("parent_id")).isNull()
+                                  ? 0
+                                  : row.value(QStringLiteral("parent_id")).toLongLong();
+        children[parent].append(row);
+    }
+
+    QJsonObject root;
+    root.insert(QStringLiteral("formatVersion"), 1);
+    root.insert(QStringLiteral("exportedAt"), QDateTime::currentDateTime().toString(Qt::ISODate));
+    root.insert(QStringLiteral("tags"), buildNodes(children, 0));
+
+    // 文件名带时间戳，不覆盖历史导出
+    const QString filePath = QDir(target).filePath(
+        QStringLiteral("tags_")
+        + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"))
+        + QStringLiteral(".json"));
+
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (error != nullptr)
+            *error = AppError::fail(
+                AppError::Io,
+                QStringLiteral("无法写入标签文件：%1").arg(QDir::toNativeSeparators(filePath)));
+        return false;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    if (!file.commit()) {
+        if (error != nullptr)
+            *error = AppError::fail(
+                AppError::Io,
+                QStringLiteral("标签文件提交失败：%1").arg(QDir::toNativeSeparators(filePath)));
+        return false;
+    }
+
+    if (outPath != nullptr)
+        *outPath = filePath;
+    return true;
+}
+
+bool TagService::importFromJson(const QString &path, int *created, int *merged, AppError *error)
+{
+    if (created != nullptr)
+        *created = 0;
+    if (merged != nullptr)
+        *merged = 0;
+
+    QFile file(path);
+    if (!file.exists()) {
+        if (error != nullptr)
+            *error = failValidation(
+                QStringLiteral("标签文件不存在：%1").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error != nullptr)
+            *error = AppError::fail(
+                AppError::Io,
+                QStringLiteral("无法读取标签文件：%1").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    const QByteArray data = file.readAll();
+    file.close();
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        if (error != nullptr)
+            *error = failValidation(
+                QStringLiteral("标签文件不是合法 JSON：%1").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    const QJsonValue tagsValue = doc.object().value(QStringLiteral("tags"));
+    if (!tagsValue.isArray()) {
+        if (error != nullptr)
+            *error = failValidation(QStringLiteral("标签文件缺少 tags 数组"));
+        return false;
+    }
+    const QJsonArray tags = tagsValue.toArray();
+
+    // 整体结构校验先行：任何非法节点都拒绝，保证"要么全导入、要么全不动"
+    if (!validateTagNodes(tags, error))
+        return false;
+
+    // 预载「父 id + 名称 → 标签 id」索引：导入跑在写事务里，另一读连接看不到未提交的新行，
+    // 故同层去重靠这份内存索引（新建节点即时登记）而非事务内查询
+    AppError local;
+    QHash<QString, qint64> existing;
+    const QList<QVariantMap> rows = m_db->select(
+        QStringLiteral("SELECT id, parent_id, name FROM tag"), {}, &local);
+    if (failed(local, error))
+        return false;
+    for (const QVariantMap &row : rows) {
+        const qint64 parent = row.value(QStringLiteral("parent_id")).isNull()
+                                  ? 0
+                                  : row.value(QStringLiteral("parent_id")).toLongLong();
+        existing.insert(taggedKey(parent, row.value(QStringLiteral("name")).toString()),
+                        row.value(QStringLiteral("id")).toLongLong());
+    }
+
+    if (!m_db->transaction(&local)) {
+        if (error != nullptr)
+            *error = local;
+        return false;
+    }
+    int createdCount = 0;
+    int mergedCount = 0;
+    for (const QJsonValue &value : tags) {
+        if (!importNode(value.toObject().toVariantMap(), 0, &createdCount, &mergedCount, existing,
+                        &local)) {
+            m_db->rollback();
+            if (error != nullptr)
+                *error = local;
+            return false;
+        }
+    }
+    if (!m_db->commit(&local)) {
+        m_db->rollback();
+        if (error != nullptr)
+            *error = local;
+        return false;
+    }
+
+    if (created != nullptr)
+        *created = createdCount;
+    if (merged != nullptr)
+        *merged = mergedCount;
+    return true;
+}
+
+bool TagService::importNode(const QVariantMap &node, qint64 parentId, int *created, int *merged,
+                            QHash<QString, qint64> &existing, AppError *error)
+{
+    const QString name = node.value(QStringLiteral("name")).toString().trimmed();
+    if (name.isEmpty()) {
+        if (error != nullptr)
+            *error = failValidation(QStringLiteral("标签文件格式非法：存在名称为空的标签"));
+        return false;
+    }
+
+    // 同层同名 → 复用已有标签（幂等）；否则新建并登记进索引
+    const QString key = taggedKey(parentId, name);
+    qint64 nodeId = existing.value(key, 0);
+    if (nodeId > 0) {
+        ++(*merged);
+    } else {
+        AppError local;
+        const QVariantMap params = {
+            {QStringLiteral("name"), name},
+            {QStringLiteral("parent_id"), parentId > 0 ? QVariant(parentId) : QVariant()},
+        };
+        if (!m_db->execute(QStringLiteral("INSERT INTO tag (name, parent_id) "
+                                          "VALUES (:name, :parent_id)"),
+                           params, &nodeId, &local)) {
+            if (error != nullptr)
+                *error = local;
+            return false;
+        }
+        existing.insert(key, nodeId);
+        ++(*created);
+    }
+
+    const QVariantList children = node.value(QStringLiteral("children")).toList();
+    for (const QVariant &child : children) {
+        if (!importNode(child.toMap(), nodeId, created, merged, existing, error))
+            return false;
+    }
+    return true;
 }

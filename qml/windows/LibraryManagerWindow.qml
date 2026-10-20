@@ -333,6 +333,10 @@ Window {
                 onClicked: {
                     rowMenu.close()
                     exportPendingName = rowMenu.libName
+                    // 默认定位到设置里的默认导出位置（未设置则不干预）
+                    const dirUrl = typeEngine.exportDirUrl()
+                    if (dirUrl !== "")
+                        exportFolderPicker.currentFolder = dirUrl
                     exportFolderPicker.open()
                 }
             }

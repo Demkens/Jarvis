@@ -80,13 +80,17 @@ public:
     Q_INVOKABLE QVariantMap queryPackages(const QVariantMap &filters, int page);
 
     // ---- M5 设置门面 ----
-    // 返回 {ok, pageSize, scoreRecentWeight}（当前内存值）
+    // 返回 {ok, pageSize, scoreRecentWeight, exportDir}（当前内存值）
     Q_INVOKABLE QVariantMap settings() const;
 
-    // 保存：values 键为 pageSize/scoreRecentWeight（缺省键保持现值）；
+    // 保存：values 键为 pageSize/scoreRecentWeight/exportDir（缺省键保持现值）；
     // 原子写 settings.json 成功后更新内存，并重新应用 setter 到 PackageService
-    // （评分权重立即生效；每页数量下次查询即用）。返回 {ok, message?}。
+    // （评分权重立即生效；每页数量下次查询即用）。exportDir 为空白串时拒绝并返回失败消息。
+    // 返回 {ok, message?}。
     Q_INVOKABLE QVariantMap saveSettings(const QVariantMap &values);
+
+    // 默认导出位置的 file:// URL（供 QML 文件对话框初始定位）；未设置返回空串
+    Q_INVOKABLE QString exportDirUrl() const;
 
     // 改标题 / 评分（0–100，0=清除；二次评分 0.4/0.6 加权）/ 创作日期 / 删除
     Q_INVOKABLE QVariantMap updateTitle(qint64 fileId, const QString &title);
@@ -110,6 +114,15 @@ public:
     // 整体替换某包的标签集合：tagIds 为 QML 数组（元素为标签 id）。
     // 反链（任意两标签不得互为祖先/后代）由服务层校验，违反即拒绝并返回失败消息。
     Q_INVOKABLE QVariantMap writeFileTags(qint64 fileId, const QVariantList &tagIds);
+
+    // ---- M6 标签树导入/导出门面 ----
+    // 导出全部标签到默认导出位置（生成 tags_yyyyMMdd_HHmmss.json）。返回 {ok, message?, path?}；
+    // 未设置导出位置或写盘失败时 ok=false。
+    Q_INVOKABLE QVariantMap exportTags();
+
+    // 从标签文件（JSON）导入并合并进现有标签树：同层同名复用已有标签并把子标签并入其下（幂等）。
+    // path 为标签文件本地路径。返回 {ok, message?, created, merged}；成功后刷新 tagTree。
+    Q_INVOKABLE QVariantMap importTags(const QString &path);
 
     // 包内首个文件（001.ext）的本地 URL（"用系统默认程序打开"用）。
     // 包目录仅含本包文件且按零填充序号命名，系统查看器据此可在同目录内翻页；

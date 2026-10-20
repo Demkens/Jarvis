@@ -53,6 +53,10 @@ Item {
                 onSettingsRequested: dialogs.openSettings()
                 // 槽函数: 打开标签管理弹窗
                 onTagManagerRequested: dialogs.openTagManager()
+                // 槽函数: 导出全部标签到默认导出位置
+                onTagExportRequested: dialogs.exportTags()
+                // 槽函数: 从标签文件导入并合并
+                onTagImportRequested: dialogs.importTags()
             }
 
             RowLayout {

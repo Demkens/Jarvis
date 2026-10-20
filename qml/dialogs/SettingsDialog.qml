@@ -1,7 +1,9 @@
-// 全局设置对话框（M5）：每页数量 / 评分权重 / 主题（二期占位）。
+// 全局设置对话框（M5）：每页数量 / 评分权重 / 默认导出位置。
 // 打开时从核心读当前值（typeEngine.settings），保存时写回
 // （typeEngine.saveSettings → envs/settings.json 原子写 + 立即应用到各服务）。
 // 对话框不感知"设置如何生效"，只负责取值/提交；成功与否经 onAccepted 由调用方提示。
+// 「默认导出位置」的系统目录选择器不在此内联（Popup 内嵌套原生选择器不可靠），
+// 改由 exportDirPickRequested 信号交给 AppDialogs 顶层选择器，选定后经 setExportDirPicked 回填。
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -15,18 +17,30 @@ Dialog {
     x: (Overlay.overlay.width - width) / 2
     y: (Overlay.overlay.height - height) / 2
     width: 440
-    height: 298
+    height: 340
     standardButtons: Dialog.NoButton
     padding: 0
 
     // 保存失败时的错误文案（状态栏已移除，失败经 onAccepted 由调用方处理）
     property string errText: ""
+    // 默认导出位置（本地绝对路径文本）
+    property string exportDirText: ""
+
+    // 信号: 请求选择默认导出位置目录（交给 AppDialogs 打开系统选择器）
+    signal exportDirPickRequested()
+
+    // 函数: 回填由 AppDialogs 选定的导出目录
+    // 输入: path —— 选定的本地目录绝对路径；输出: 无
+    function setExportDirPicked(path) {
+        dialog.exportDirText = path
+    }
 
     // 打开时重读当前设置：上次未保存的修改不残留
     onOpened: {
         const s = typeEngine.settings()
         pageSpin.value = s.pageSize
         weightSpin.value = s.scoreRecentWeight
+        dialog.exportDirText = s.exportDir || ""
         errText = ""
     }
 
@@ -64,6 +78,30 @@ Dialog {
                 from: 0; to: 100; stepSize: 5
                 editable: true
                 Layout.preferredWidth: 130
+            }
+        }
+
+        // 默认导出位置（标签/数据包/库导出弹窗的初始目录）
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+            Label {
+                text: "默认导出位置"
+                Layout.preferredWidth: 96
+                font.pixelSize: 14
+            }
+            TextField {
+                id: exportDirField
+                Layout.fillWidth: true
+                font.pixelSize: 12
+                readOnly: true
+                selectByMouse: true
+                text: dialog.exportDirText
+                placeholderText: "（未设置）"
+            }
+            Button {
+                text: "浏览…"
+                onClicked: dialog.exportDirPickRequested()
             }
         }
 
@@ -129,7 +167,8 @@ Dialog {
 
                     const result = typeEngine.saveSettings({
                         pageSize: pageSpin.value,
-                        scoreRecentWeight: weightSpin.value
+                        scoreRecentWeight: weightSpin.value,
+                        exportDir: dialog.exportDirText
                     })
                     if (!result.ok) {
                         dialog.errText = result.message || "保存失败"

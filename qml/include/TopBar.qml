@@ -18,6 +18,10 @@ Item {
     signal settingsRequested()
     // 信号: 打开标签管理弹窗
     signal tagManagerRequested()
+    // 信号: 导出全部标签
+    signal tagExportRequested()
+    // 信号: 从标签文件导入并合并
+    signal tagImportRequested()
 
     // 顶栏衬底
     Rectangle {
@@ -101,6 +105,8 @@ Item {
             ToolsMenu {
                 Layout.alignment: Qt.AlignVCenter
                 onTagManagerRequested: topBar.tagManagerRequested()
+                onTagExportRequested: topBar.tagExportRequested()
+                onTagImportRequested: topBar.tagImportRequested()
             }
 
             Item { Layout.fillWidth: true }
