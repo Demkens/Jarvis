@@ -21,7 +21,8 @@ Item {
 
     // ---- 对外可调用方法：Main 的信号处理器转入此处 ----
     function openViewer(id) { viewerWindow.openPackage(id) }
-    // 详情窗口：与 ViewerWindow 同级顶层实例化（Window 挂在深层 Item 下会弹不出）
+    // 详情窗口：与 ViewerWindow 同级顶层实例化（Window 挂在深层 Item 下会弹不出）。
+    // 其「编辑」按钮使用详情窗口自带 EditPackageDialog 实例（弹窗须渲染在所属窗口的 overlay 内）
     function openDetail(id) { detailWindow.openPackage(id) }
     // 元数据编辑弹窗（资源页右键、详情窗口「编辑」按钮两处入口）
     function openEditPackage(id) { editDialog.openFor(id) }
@@ -81,9 +82,9 @@ Item {
 
     DetailWindow {
         id: detailWindow
-        onEditRequested: function (id) { appDialogs.openEditPackage(id) }
     }
 
+    // 资源页「编辑」入口的弹窗（详情窗口的编辑入口使用其自带实例，见 DetailWindow.qml）
     EditPackageDialog {
         id: editDialog
         // 保存成功后：详情窗口若正展示该包则重读；资源列表由 PackageUpdated → TypeEngine.packagesChanged 自动刷新
