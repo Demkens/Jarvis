@@ -51,6 +51,8 @@ public:
     // 指纹覆盖情况（供查重窗口在扫描前提示缺指纹）。
     // 输入 query：{ allTypes: bool, forms: [类型 form] }；缺省视为全部类型。
     // 输出：{ ok, message?, totalRows, missingContent, missingPerceptual, missingAny,
+    //         stalePerceptual: 感知指纹为旧算法版本、需要重算的行数,
+    //         algoVersion: 当前指纹算法版本,
     //         packagesWithoutRows }。
     Q_INVOKABLE QVariantMap fingerprintStatus(const QVariantMap &query);
 
@@ -65,6 +67,7 @@ public:
     Q_INVOKABLE QVariantMap startScan(const QVariantMap &query);
 
     // 启动补指纹（异步，仅针对当前库内所选类型）。
+    // 覆盖三类：缺 content_hash 的行、缺感知指纹的行、感知指纹为旧算法版本的行。
     // 输入 query 同上（threshold/externalFolder 被忽略）。
     // 输出：{ ok, message?, nothing?: bool }；进度/结果经 backfillProgress / backfillFinished 送出。
     Q_INVOKABLE QVariantMap startBackfill(const QVariantMap &query);

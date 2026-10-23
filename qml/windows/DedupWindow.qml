@@ -92,30 +92,47 @@ Window {
     }
 
     // 函数: 指纹状态文案
+    //       除「缺失」外还要报告「旧算法版本」，否则用户会误以为指纹齐全
     // 输入/输出: 无
     function fingerprintText() {
         if (!win.fingerprint || win.fingerprint.ok === false)
             return "指纹状态未知"
         var missing = win.fingerprint.missingAny || 0
+        var stale = win.fingerprint.stalePerceptual || 0
         var packages = win.fingerprint.packagesWithoutRows || 0
-        if (missing === 0 && packages === 0)
+        if (missing === 0 && stale === 0 && packages === 0)
             return "指纹齐全"
-        var text = "缺指纹文件 " + missing + " 个"
+        var parts = []
+        if (missing > 0)
+            parts.push("缺指纹文件 " + missing + " 个")
+        if (stale > 0)
+            parts.push("旧算法指纹待重算 " + stale + " 个")
         if (packages > 0)
-            text += " · 未建指纹行的旧包 " + packages + " 个"
-        return text
+            parts.push("未建指纹行的旧包 " + packages + " 个")
+        return parts.join(" · ")
     }
 
-    // 函数: 当前设置下缺指纹实际影响的文件数
-    //       精确模式只看 content_hash；近似模式额外看 pHash
+    // 函数: 当前设置下指纹问题实际影响的文件数
+    //       精确模式只看 content_hash（旧 pHash 不影响）；近似模式还要计入 pHash 缺失与版本落后
     // 输入/输出: 无；输出: 影响条数
     function missingImpact() {
         if (!win.fingerprint || win.fingerprint.ok === false)
             return 0
         var packages = win.fingerprint.packagesWithoutRows || 0
         if (win.thresholdValue > 0)
-            return (win.fingerprint.missingAny || 0) + packages
+            return (win.fingerprint.missingAny || 0)
+                + (win.fingerprint.stalePerceptual || 0) + packages
         return (win.fingerprint.missingContent || 0) + packages
+    }
+
+    // 函数: 是否存在任何需要补指纹的项目（与当前模式无关）
+    // 输入/输出: 无
+    function hasFingerprintWork() {
+        if (!win.fingerprint || win.fingerprint.ok === false)
+            return false
+        return (win.fingerprint.missingAny || 0) > 0
+            || (win.fingerprint.stalePerceptual || 0) > 0
+            || (win.fingerprint.packagesWithoutRows || 0) > 0
     }
 
     // 函数: 当前选中的结果行
@@ -464,15 +481,14 @@ Window {
             Text {
                 Layout.fillWidth: true
                 font.pixelSize: 12
-                color: (win.fingerprint.missingAny || 0) > 0 ? "#b45309" : "#6b7280"
+                color: win.hasFingerprintWork() ? "#b45309" : "#6b7280"
                 text: win.fingerprintText()
             }
 
             Button {
                 text: "补指纹"
                 enabled: win.job === "" && libraryService.currentName !== ""
-                         && ((win.fingerprint.missingAny || 0) > 0
-                             || (win.fingerprint.packagesWithoutRows || 0) > 0)
+                         && win.hasFingerprintWork()
                 onClicked: win.startBackfill()
             }
 
@@ -835,7 +851,7 @@ Window {
         }
     }
 
-    // ---------- 缺指纹提示 ----------
+    // ---------- 指纹缺失/过期提示 ----------
     Dialog {
         id: missingPrompt
         parent: Overlay.overlay
@@ -843,7 +859,7 @@ Window {
         y: Math.round((parent.height - height) / 2)
         width: 420
         modal: true
-        title: "缺少指纹"
+        title: "指纹需要更新"
         standardButtons: Dialog.NoButton
         padding: 16
 
@@ -854,7 +870,8 @@ Window {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: "有 " + win.missingImpact()
-                      + " 项缺少指纹，这些文件将无法参与查重。\n"
+                      + " 个文件缺少当前可用的指纹，这些文件将无法参与本次查重。\n"
+                      + "原因可能是尚未计算指纹，或指纹由旧版算法生成、与当前口径不可比。\n"
                       + "建议先补指纹（需要读取并解码图片），或仍按现有指纹查重。"
             }
 

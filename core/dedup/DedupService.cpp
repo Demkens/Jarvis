@@ -24,8 +24,11 @@ namespace {
 
 // SQLite 默认参数上限约 999，分批查询避免超限
 constexpr int kSizeQueryChunk = 500;
-// 指纹算法版本：content_hash 为 SHA-256，感知指纹为 64 位 aHash/dHash/pHash；换算法时递增
-constexpr int kFingerprintAlgoVersion = 1;
+// 指纹算法版本：标记一行的数值由第几版算法算出，只有同版本之间才可比。
+// v1：content_hash=SHA-256；pHash 为含直流分量的 64 位
+// v2：pHash 改为标准口径（跳过直流分量，63 位有效，最高位固定 0）
+// 升版后旧行由补指纹流程重算，算法再次变更时递增。
+constexpr int kFingerprintAlgoVersion = 2;
 
 // 把 query 中的 forms 规整为去空、去重的列表
 QStringList formsFromQuery(const QVariantMap &query)
@@ -293,7 +296,9 @@ QVariantMap DedupService::fingerprintStatus(const QVariantMap &query)
         "  AS missing_content, "
         "SUM(CASE WHEN p.phash IS NULL OR p.phash = '' THEN 1 ELSE 0 END) AS missing_perceptual, "
         "SUM(CASE WHEN (p.content_hash IS NULL OR p.content_hash = '') "
-        "              OR (p.phash IS NULL OR p.phash = '') THEN 1 ELSE 0 END) AS missing_any "
+        "              OR (p.phash IS NULL OR p.phash = '') THEN 1 ELSE 0 END) AS missing_any, "
+        "SUM(CASE WHEN p.phash IS NOT NULL AND p.phash <> '' "
+        "              AND p.algo_version < :algoVersion THEN 1 ELSE 0 END) AS stale_perceptual "
         "FROM photohash p "
         "JOIN file f ON f.id = p.id "
         "JOIN type t ON t.id = f.type_id "
@@ -302,7 +307,9 @@ QVariantMap DedupService::fingerprintStatus(const QVariantMap &query)
 
     AppError error;
     QVariantMap counts;
-    if (!m_library->dbAccess().selectOne(countSql, params, counts, &error))
+    QVariantMap countParams = params;
+    countParams.insert(QStringLiteral("algoVersion"), kFingerprintAlgoVersion);
+    if (!m_library->dbAccess().selectOne(countSql, countParams, counts, &error))
         return fail(error.message);
 
     const QString packageSql = QStringLiteral(
@@ -324,6 +331,9 @@ QVariantMap DedupService::fingerprintStatus(const QVariantMap &query)
         {QStringLiteral("missingPerceptual"),
          counts.value(QStringLiteral("missing_perceptual")).toInt()},
         {QStringLiteral("missingAny"), counts.value(QStringLiteral("missing_any")).toInt()},
+        {QStringLiteral("stalePerceptual"),
+         counts.value(QStringLiteral("stale_perceptual")).toInt()},
+        {QStringLiteral("algoVersion"), kFingerprintAlgoVersion},
         {QStringLiteral("packagesWithoutRows"),
          packageCounts.value(QStringLiteral("packages_without_rows")).toInt()},
     };
@@ -509,7 +519,8 @@ bool DedupService::collectScanItems(const QVariantMap &query, QVector<DedupScanI
 
     const QString sql = QStringLiteral(
         "SELECT p.id AS file_id, p.relative_path, p.content_hash, p.size_bytes, "
-        "       p.ahash, p.phash, p.dhash, f.storage_path, f.title, t.name AS type_name, "
+        "       p.ahash, p.phash, p.dhash, p.algo_version, "
+        "       f.storage_path, f.title, t.name AS type_name, "
         "       (SELECT c.name FROM file_creator fc "
         "          JOIN creator c ON c.id = fc.creator_id "
         "         WHERE fc.file_id = f.id "
@@ -550,9 +561,15 @@ bool DedupService::collectScanItems(const QVariantMap &query, QVector<DedupScanI
         if (item.size <= 0)
             item.size = QFileInfo(item.absolutePath).size();
         item.contentHash = row.value(QStringLiteral("content_hash")).toString();
-        item.ahash = row.value(QStringLiteral("ahash")).toString();
-        item.dhash = row.value(QStringLiteral("dhash")).toString();
-        item.phash = row.value(QStringLiteral("phash")).toString();
+        // 旧算法版本生成的感知指纹与当前口径不可比，本轮按缺失处理（精确模式仍可用 content_hash）
+        const bool staleFingerprint =
+            row.value(QStringLiteral("algo_version")).toInt() < kFingerprintAlgoVersion;
+        item.ahash =
+            staleFingerprint ? QString() : row.value(QStringLiteral("ahash")).toString();
+        item.dhash =
+            staleFingerprint ? QString() : row.value(QStringLiteral("dhash")).toString();
+        item.phash =
+            staleFingerprint ? QString() : row.value(QStringLiteral("phash")).toString();
         item.external = false;
         items->append(item);
     }
@@ -570,22 +587,25 @@ int DedupService::collectBackfillItems(const QVariantMap &query,
     const QString libraryName = m_library->currentName();
     const QString linkAddress = m_library->config().entry(libraryName).linkAddress;
 
-    // 1) 已有 photohash 行，但缺 content_hash 或感知指纹
+    // 1) 已有 photohash 行，但缺 content_hash、缺感知指纹，或感知指纹为旧算法版本
     const QString missingSql = QStringLiteral(
-        "SELECT p.id AS file_id, p.relative_path, p.content_hash, p.phash, "
+        "SELECT p.id AS file_id, p.relative_path, p.content_hash, p.phash, p.algo_version, "
         "       p.size_bytes, f.storage_path "
         "FROM photohash p "
         "JOIN file f ON f.id = p.id "
         "JOIN type t ON t.id = f.type_id "
         "WHERE 1 = 1 %1 "
         "AND ((p.content_hash IS NULL OR p.content_hash = '') "
-        "     OR (p.phash IS NULL OR p.phash = '')) "
+        "     OR (p.phash IS NULL OR p.phash = '') "
+        "     OR (p.phash IS NOT NULL AND p.phash <> '' AND p.algo_version < :algoVersion)) "
         "ORDER BY p.id, p.relative_path")
         .arg(clause);
 
     AppError error;
+    QVariantMap missingParams = params;
+    missingParams.insert(QStringLiteral("algoVersion"), kFingerprintAlgoVersion);
     const QList<QVariantMap> missingRows =
-        m_library->dbAccess().select(missingSql, params, &error);
+        m_library->dbAccess().select(missingSql, missingParams, &error);
     if (!error.ok()) {
         qWarning().noquote() << "[dedup] 查询待补指纹行失败：" << error.message;
         return -1;
@@ -597,7 +617,12 @@ int DedupService::collectBackfillItems(const QVariantMap &query,
             continue;
 
         const bool missingContent = row.value(QStringLiteral("content_hash")).toString().isEmpty();
-        const bool missingPerceptual = row.value(QStringLiteral("phash")).toString().isEmpty();
+        const QString phash = row.value(QStringLiteral("phash")).toString();
+        // 只有「缺 pHash」或「版本落后」两种情况才需要重算感知指纹；
+        // 版本落后的行 content_hash 仍可用，不必重算读盘
+        const bool stalePerceptual = !phash.isEmpty()
+            && row.value(QStringLiteral("algo_version")).toInt() < kFingerprintAlgoVersion;
+        const bool missingPerceptual = phash.isEmpty() || stalePerceptual;
         if (!missingContent && !missingPerceptual)
             continue;
 
@@ -681,7 +706,10 @@ int DedupService::writeFingerprintUpdates(const QVariantList &updates)
         const QString dhash = update.value(QStringLiteral("dhash")).toString();
         const QString phash = update.value(QStringLiteral("phash")).toString();
 
-        // COALESCE：只覆盖本次算出的列，未重算的列保持原值
+        // COALESCE：只覆盖本次算出的列，未重算的列保持原值。
+        // 版本号只在「本次重算了感知指纹」时晋升：否则旧算法的数值会被误标成新版本，
+        // 之后按版本筛选重算时就再也命不中这一行。
+        const bool bumpVersion = !phash.isEmpty();
         if (!db.execute(
                 QStringLiteral(
                     "INSERT INTO photohash "
@@ -695,7 +723,8 @@ int DedupService::writeFingerprintUpdates(const QVariantList &updates)
                     "ahash        = COALESCE(excluded.ahash, ahash), "
                     "phash        = COALESCE(excluded.phash, phash), "
                     "dhash        = COALESCE(excluded.dhash, dhash), "
-                    "algo_version = excluded.algo_version"),
+                    "algo_version = CASE WHEN :bump = 1 THEN excluded.algo_version "
+                    "                    ELSE algo_version END"),
                 {
                     {QStringLiteral("id"), update.value(QStringLiteral("fileId"))},
                     {QStringLiteral("relative_path"),
@@ -707,6 +736,7 @@ int DedupService::writeFingerprintUpdates(const QVariantList &updates)
                     {QStringLiteral("phash"), phash.isEmpty() ? QVariant() : QVariant(phash)},
                     {QStringLiteral("dhash"), dhash.isEmpty() ? QVariant() : QVariant(dhash)},
                     {QStringLiteral("algo_version"), kFingerprintAlgoVersion},
+                    {QStringLiteral("bump"), bumpVersion ? 1 : 0},
                 },
                 &error)) {
             qWarning().noquote() << "[dedup] 补指纹写入失败：" << error.message;

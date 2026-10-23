@@ -148,8 +148,9 @@ QVector<double> dct2d(const QVector<double> &input, int size)
     return coefficients;
 }
 
-// pHash：取 8x8 低频系数与其中位数比较，得到 64 位。
-// 说明：直流分量也参与，用于补足 64 位；中位数以全部 64 个系数计算，亮度变化会被中位数吸收。
+// pHash：标准口径（Krawetz）——32x32 DCT 后取左上 8x8 低频系数，
+// 跳过直流分量（DC 只反映整体亮度，随曝光变化，参与比较会引入噪声），
+// 剩余 63 个系数与其中位数比较得到 63 位；最高位固定 0，整体仍以 64 位存储。
 quint64 hashPerceptual(const QImage &gray)
 {
     const QImage small =
@@ -164,17 +165,22 @@ quint64 hashPerceptual(const QImage &gray)
 
     const QVector<double> coefficients = dct2d(pixels, kPHashSize);
 
+    // 左上 8x8 低频块，跳过 (0,0) 的直流分量
     QVector<double> low;
-    low.reserve(kPHashLow * kPHashLow);
+    low.reserve(kPHashLow * kPHashLow - 1);
     for (int v = 0; v < kPHashLow; ++v) {
-        for (int u = 0; u < kPHashLow; ++u)
+        for (int u = 0; u < kPHashLow; ++u) {
+            if (v == 0 && u == 0)
+                continue;
             low.append(coefficients[v * kPHashSize + u]);
+        }
     }
 
     QVector<double> sorted = low;
     std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
     const double median = sorted.at(sorted.size() / 2);
 
+    // 63 次左移后正好占用低 63 位，最高位保持 0
     quint64 bits = 0;
     for (double value : low)
         bits = (bits << 1) | (value > median ? 1ULL : 0ULL);
