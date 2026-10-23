@@ -4,6 +4,7 @@
 #include <QQmlContext>
 
 #include "creator/CreatorService.h"
+#include "dedup/DedupService.h"
 #include "events/EventBus.h"
 #include "import/ImportService.h"
 #include "library/AppPaths.h"
@@ -42,8 +43,10 @@ bool Application::initialize(const QString &libraryOverride)
                                                  m_creators.get(), m_eventBus.get());
     m_packages = std::make_unique<PackageService>(m_paths.get(), m_library.get(),
                                                   m_storage.get(), m_eventBus.get());
+    // M9 查重：图片内容指纹与完全重复预检；导入服务在成功后调用它写入指纹
+    m_dedup = std::make_unique<DedupService>(m_library.get(), this);
     m_import = std::make_unique<ImportService>(m_library.get(), m_storage.get(),
-                                               m_typePackages.get(), this);
+                                               m_typePackages.get(), m_dedup.get(), this);
 
     // M7 数据统计：只读聚合门面，借库/包/标签三个服务取数，订阅事件置脏（懒重算）
     m_stats = std::make_unique<StatsService>(m_library.get(), m_packages.get(), m_tags.get(),
@@ -75,5 +78,6 @@ void Application::bindToQml(QQmlApplicationEngine &engine)
     engine.rootContext()->setContextProperty(QStringLiteral("libraryService"), m_library.get());
     engine.rootContext()->setContextProperty(QStringLiteral("typeEngine"), m_typeEngine.get());
     engine.rootContext()->setContextProperty(QStringLiteral("importService"), m_import.get());
+    engine.rootContext()->setContextProperty(QStringLiteral("dedupService"), m_dedup.get());
     engine.rootContext()->setContextProperty(QStringLiteral("statsService"), m_stats.get());
 }

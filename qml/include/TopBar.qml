@@ -22,6 +22,8 @@ Item {
     signal tagExportRequested()
     // 信号: 从标签文件导入并合并
     signal tagImportRequested()
+    // 信号: 打开图片查重窗口
+    signal imageDedupRequested()
 
     // 顶栏衬底
     Rectangle {
@@ -107,6 +109,7 @@ Item {
                 onTagManagerRequested: topBar.tagManagerRequested()
                 onTagExportRequested: topBar.tagExportRequested()
                 onTagImportRequested: topBar.tagImportRequested()
+                onImageDedupRequested: topBar.imageDedupRequested()
             }
 
             Item { Layout.fillWidth: true }

@@ -22,7 +22,13 @@ set(CMAKE_AUTORCC ON)
 set (CORE_HEADERS
     core/app/Application.h
     core/common/Logging.h
+    core/common/MediaTypes.h
     core/creator/CreatorService.h
+    core/dedup/ContentHasher.h
+    core/dedup/DedupBackfillWorker.h
+    core/dedup/DedupScanWorker.h
+    core/dedup/DedupService.h
+    core/dedup/ImageHasher.h
     core/events/EventBus.h
     core/import/ImportService.h
     core/library/AppPaths.h
@@ -45,6 +51,11 @@ add_library(jarvis_core STATIC
     ${CORE_HEADERS}
     core/app/Application.cpp
     core/common/Logging.cpp
+    core/dedup/ContentHasher.cpp
+    core/dedup/DedupBackfillWorker.cpp
+    core/dedup/DedupScanWorker.cpp
+    core/dedup/DedupService.cpp
+    core/dedup/ImageHasher.cpp
     core/types/TypePackage.cpp
     core/types/TypePackageManager.cpp
     core/events/EventBus.cpp
@@ -112,6 +123,7 @@ qt_add_qml_module(jarvis
         qml/dialogs/TagPickDialog.qml
         qml/windows/ViewerWindow.qml
         qml/windows/LibraryManagerWindow.qml
+        qml/windows/DedupWindow.qml
 )
 
 target_link_libraries(jarvis PRIVATE jarvis_core)

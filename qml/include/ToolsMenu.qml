@@ -2,7 +2,8 @@
 // 职责：集中承载与具体资源无关的工具类入口，避免 TopBar.qml 随功能增长而臃肿。
 // 对外信号：tagManagerRequested() —— 选择了「标签管理…」；
 //           tagExportRequested() —— 选择了「标签导出…」；
-//           tagImportRequested() —— 选择了「标签导入…」。
+//           tagImportRequested() —— 选择了「标签导入…」；
+//           imageDedupRequested() —— 选择了「图片查重…」。
 import QtQuick
 import QtQuick.Controls
 
@@ -20,6 +21,8 @@ Item {
     signal tagExportRequested()
     // 信号: 从标签文件导入并合并进现有标签体系
     signal tagImportRequested()
+    // 信号: 打开图片查重窗口
+    signal imageDedupRequested()
 
     Rectangle {
         id: toolsArea
@@ -47,6 +50,15 @@ Item {
             y: toolsArea.height
             width: 160
             closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+            MenuItem {
+                text: "图片查重…"
+                // 查重依赖当前库的指纹表，须先打开库
+                enabled: libraryService.currentName !== ""
+                onTriggered: toolsMenu.imageDedupRequested()
+            }
+
+            MenuSeparator { }
 
             MenuItem {
                 text: "标签管理…"

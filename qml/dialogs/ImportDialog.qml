@@ -3,6 +3,7 @@
 // 契约：
 //  - 通道A(向导)：类型包 wizard.qml 自绘内容；本对话框提供顶栏与底栏「导入/关闭」。
 //    导入 → wizardLoader.item.submit()；失败 → 类型包发 importFailed → 弹出独立警告弹窗。
+//    命中库内完全重复 → 类型包发 importBlocked → 弹出重复明细并阻断，不写库、不复位已选文件。
 //    成功后类型包自行复位回拖拽区，本对话框不跳结果页、不关闭。
 //  - 通道B(预处理)：内容与结果页完全归本对话框，顶/底栏不显示。
 
@@ -65,9 +66,39 @@ Dialog {
     }
 
     // 函数: 导入完成, 存储结果（仅通道B 使用）
+    //       若结果中存在完全重复项，先弹出重复明细，结果页仍正常展示失败项
     function showResult(result) {
         lastResult = result
         steps.currentIndex = 2
+        var duplicates = []
+        var list = result.results || []
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i] && list[i].duplicate)
+                duplicates = duplicates.concat(list[i].duplicates || [])
+        }
+        if (duplicates.length > 0)
+            duplicateWarn.show(duplicates)
+    }
+
+    // 函数: 取路径中的文件名（含扩展名）
+    // 输入: path；输出: 文件名
+    function fileName(path) {
+        return String(path).split(/[\\/]/).pop()
+    }
+
+    // 函数: 字节数 → 可读文本
+    // 输入: n —— 字节数；输出: 如 "1.5 MB" 的文本
+    function formatBytes(n) {
+        if (!n || n <= 0)
+            return "0 B"
+        var units = ["B", "KB", "MB", "GB"]
+        var i = 0
+        var v = n
+        while (v >= 1024 && i < units.length - 1) {
+            v /= 1024
+            ++i
+        }
+        return (i === 0 ? String(v) : v.toFixed(1)) + " " + units[i]
     }
 
     // 背景显示调整
@@ -101,6 +132,13 @@ Dialog {
                     item.form = dialog.form
                     // 失败 → 独立警告弹窗；成功由类型包自行复位（不跳结果页）
                     item.importFailed.connect(function (message) { importWarn.show(message) })
+                    // 完全重复 → 阻断导入，弹出重复明细并由类型包保留当前选择
+                    // 兼容尚未声明该信号的类型包：缺失时退化为普通失败提示
+                    if (item.importBlocked !== undefined) {
+                        item.importBlocked.connect(function (duplicates) {
+                            duplicateWarn.show(duplicates)
+                        })
+                    }
                 }
             }
 
@@ -360,6 +398,103 @@ Dialog {
                     text: "关闭"
                     highlighted: true
                     onClicked: importWarn.close()
+                }
+            }
+        }
+    }
+
+    // 完全重复阻断提示（独立弹窗，通道A/B 共用）
+    // 只展示明细，不提供「仍然导入」；关闭后回到导入页，保留已选文件与表单
+    Dialog {
+        id: duplicateWarn
+        parent: Overlay.overlay
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        property var duplicates: []
+        function show(list) {
+            duplicates = list || []
+            open()
+        }
+        title: "检测到完全重复"
+        modal: true
+        standardButtons: Dialog.NoButton
+        width: 560
+        contentItem: ColumnLayout {
+            spacing: 12
+
+            Text {
+                Layout.fillWidth: true
+                text: "以下文件与库中已有内容字节级完全相同，已阻断本次导入："
+                color: "#c0341d"
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(duplicateColumn.implicitHeight, 320)
+                clip: true
+
+                Column {
+                    id: duplicateColumn
+                    width: duplicateWarn.width - 48
+                    spacing: 8
+
+                    Repeater {
+                        model: duplicateWarn.duplicates
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: duplicateColumn.width
+                            height: duplicateItem.implicitHeight + 16
+                            radius: 4
+                            color: "#f3f5f9"
+
+                            ColumnLayout {
+                                id: duplicateItem
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 2
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: dialog.fileName(modelData.path) + " · "
+                                          + dialog.formatBytes(modelData.size)
+                                    color: "#1f2430"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    elide: Text.ElideMiddle
+                                }
+
+                                Column {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Repeater {
+                                        model: modelData.existing || []
+                                        delegate: Text {
+                                            required property var modelData
+                                            width: parent.width
+                                            text: "已存在于：" + (modelData.title || "未命名")
+                                                  + " · " + (modelData.relativePath || "")
+                                            color: "#5c6472"
+                                            font.pixelSize: 11
+                                            elide: Text.ElideMiddle
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "知道了"
+                    highlighted: true
+                    onClicked: duplicateWarn.close()
                 }
             }
         }

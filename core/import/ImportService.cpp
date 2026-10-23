@@ -1,38 +1,29 @@
 #include "ImportService.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include "common/MediaTypes.h"
+#include "dedup/DedupService.h"
 #include "library/LibraryService.h"
 #include "storage/StorageService.h"
 #include "types/TypePackage.h"
 #include "types/TypePackageManager.h"
 
-namespace {
-
-QStringList kImageSuffixes = {
-    QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
-    QStringLiteral("gif"),  QStringLiteral("bmp"),  QStringLiteral("webp"),
-};
-
-} // namespace
-
 ImportService::ImportService(LibraryService *library, StorageService *storage,
-                             TypePackageManager *typePackages, QObject *parent)
+                             TypePackageManager *typePackages, DedupService *dedup,
+                             QObject *parent)
     : QObject(parent)
     , m_library(library)
     , m_storage(storage)
     , m_typePackages(typePackages)
+    , m_dedup(dedup)
 {
-}
-
-bool ImportService::isImageFile(const QString &fileName)
-{
-    const QString suffix = QFileInfo(fileName).suffix().toLower();
-    return kImageSuffixes.contains(suffix);
 }
 
 ImportPlan ImportService::planFromMap(const QString &form, const QVariantMap &map)
@@ -59,15 +50,59 @@ QVariantMap ImportService::executePlans(const QString &form, const QVariantList 
 
     for (int index = 0; index < plans.size(); ++index) {
         const ImportPlan plan = planFromMap(form, plans.at(index).toMap());
+        QVariantMap item{{QStringLiteral("index"), index}};
+
+        // 写入前完全重复预检：命中即阻断，不复制任何文件
+        QVariantMap precheck{{QStringLiteral("ok"), true},
+                             {QStringLiteral("hasDuplicates"), false},
+                             {QStringLiteral("files"), QVariantList{}}};
+        if (m_dedup != nullptr) {
+            QVariantList paths;
+            for (const QString &file : plan.files)
+                paths.append(file);
+            precheck = m_dedup->precheck(paths);
+            if (!precheck.value(QStringLiteral("ok")).toBool()) {
+                item.insert(QStringLiteral("ok"), false);
+                item.insert(QStringLiteral("message"),
+                            precheck.value(QStringLiteral("message")).toString());
+                ++failed;
+                results.append(item);
+                continue;
+            }
+            if (precheck.value(QStringLiteral("hasDuplicates")).toBool()) {
+                const QVariantList files = precheck.value(QStringLiteral("files")).toList();
+                QVariantList duplicates;
+                for (const QVariant &value : files) {
+                    const QVariantMap file = value.toMap();
+                    if (file.value(QStringLiteral("duplicate")).toBool())
+                        duplicates.append(file);
+                }
+                item.insert(QStringLiteral("ok"), false);
+                item.insert(QStringLiteral("duplicate"), true);
+                item.insert(QStringLiteral("duplicates"), duplicates);
+                item.insert(QStringLiteral("message"),
+                            QStringLiteral("检测到 %1 个文件与库中已有内容完全重复，已阻断导入")
+                                .arg(duplicates.size()));
+                qInfo().noquote() << "[import] 完全重复，已阻断：" << plan.title
+                                  << "重复文件数 =" << duplicates.size();
+                ++failed;
+                results.append(item);
+                continue;
+            }
+        }
+
         AppError error;
         const qint64 id = m_storage->importPackage(plan, &error);
 
-        QVariantMap item{{QStringLiteral("index"), index}};
         if (id > 0) {
             item.insert(QStringLiteral("ok"), true);
             item.insert(QStringLiteral("id"), id);
             importedIds.append(id);
             ++success;
+            // 指纹写入失败不影响导入结果，后续可由「补指纹」入口修复；
+            // 预检已算出的哈希会随 prechecked 传入，避免二次读盘
+            indexImportedFiles(id, plan.files,
+                               precheck.value(QStringLiteral("files")).toList());
         } else {
             item.insert(QStringLiteral("ok"), false);
             item.insert(QStringLiteral("message"), error.message);
@@ -86,6 +121,53 @@ QVariantMap ImportService::executePlans(const QString &form, const QVariantList 
         {QStringLiteral("results"), results},
         {QStringLiteral("importedIds"), importedIds},
     };
+}
+
+void ImportService::indexImportedFiles(qint64 fileId, const QStringList &files,
+                                       const QVariantList &prechecked)
+{
+    if (m_dedup == nullptr || fileId <= 0 || files.isEmpty())
+        return;
+
+    // 预检结果按绝对路径索引：命中同尺寸候选时已有 contentHash/size，可直接复用
+    QHash<QString, QVariantMap> precheckedByPath;
+    for (const QVariant &value : prechecked) {
+        const QVariantMap item = value.toMap();
+        const QString path = item.value(QStringLiteral("path")).toString();
+        if (!path.isEmpty())
+            precheckedByPath.insert(path, item);
+    }
+
+    QVariantList entries;
+    for (int index = 0; index < files.size(); ++index) {
+        const QFileInfo info(files.at(index));
+        if (!MediaTypes::isImageFile(info.fileName()))
+            continue;
+
+        // 包内文件按导入顺序重命名为 001.ext，指纹表使用同一相对路径作为主键
+        const QString suffix = info.suffix();
+        const QString relativePath = StorageService::indexedName(index + 1)
+            + (suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix);
+
+        QVariantMap entry{
+            {QStringLiteral("relativePath"), relativePath},
+            {QStringLiteral("sourcePath"), info.absoluteFilePath()},
+        };
+        const auto cached = precheckedByPath.constFind(info.absoluteFilePath());
+        if (cached != precheckedByPath.constEnd()) {
+            entry.insert(QStringLiteral("contentHash"),
+                         cached->value(QStringLiteral("contentHash")));
+            entry.insert(QStringLiteral("size"), cached->value(QStringLiteral("size")));
+        }
+        entries.append(entry);
+    }
+
+    if (entries.isEmpty())
+        return;
+
+    if (m_dedup->indexPackage(fileId, entries) < 0) {
+        qWarning().noquote() << "[import] 内容指纹写入失败，可稍后补指纹：fileId =" << fileId;
+    }
 }
 
 QVariantMap ImportService::scanPreprocess(const QString &form, const QString &rootDir)
@@ -140,7 +222,7 @@ QVariantMap ImportService::scanPreprocess(const QString &form, const QString &ro
             const QDir folder(entry.absoluteFilePath());
             QFileInfoList images;
             for (const QFileInfo &info : folder.entryInfoList(QDir::Files, QDir::Name)) {
-                if (isImageFile(info.fileName()))
+                if (MediaTypes::isImageFile(info.fileName()))
                     images.append(info);
             }
             if (images.isEmpty()) {
@@ -177,7 +259,7 @@ QVariantMap ImportService::scanPreprocess(const QString &form, const QString &ro
                                         .arg(entry.fileName(), coverName));
             }
             plans.append(plan);
-        } else if (isImageFile(entry.fileName())) {
+        } else if (MediaTypes::isImageFile(entry.fileName())) {
             // 根目录散图：每个文件 = 一个单图包
             plans.append(QVariantMap{
                 {QStringLiteral("title"), entry.completeBaseName()},

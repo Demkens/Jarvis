@@ -9,6 +9,7 @@
 //         importService —— 全局上下文属性（导入预览与执行）。
 //   输出  ready         —— 底栏「导入」按钮可用性（已选到文件为真）；
 //         importFailed  —— 导入失败时发出，外层弹出独立警告弹窗；
+//         importBlocked —— 命中库内完全重复时发出，外层弹出重复明细并保留当前选择；
 //         submit()      —— 底栏「导入」点击时由外层调用。
 //   成功后本页自行复位回初始态：不关闭弹窗、不跳结果页。
 import QtQuick
@@ -37,6 +38,9 @@ Item {
 
     // 输出: 导入失败，携带可读原因
     signal importFailed(string message)
+
+    // 输出: 命中库内完全重复，携带重复明细；外层仅弹提示，不复位本页已选文件
+    signal importBlocked(var duplicates)
 
     // 无布局管理器托底时的隐式尺寸（StackLayout 会覆写为填充尺寸）
     implicitWidth: 760
@@ -207,6 +211,9 @@ Item {
         var first = (result.results && result.results.length > 0) ? result.results[0] : null
         if (first && first.ok) {
             reset()
+        } else if (first && first.duplicate) {
+            // 阻断导入，保留当前文件与表单，外层只弹重复明细
+            page.importBlocked(first.duplicates || [])
         } else {
             page.importFailed(first && first.message ? first.message
                                                      : (result.message || "导入失败"))

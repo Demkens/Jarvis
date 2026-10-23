@@ -83,6 +83,14 @@ QString StorageService::indexedName(int index)
     return QStringLiteral("%1").arg(index, 3, 10, QLatin1Char('0'));
 }
 
+QString StorageService::packageFilePath(const QString &linkAddress, int bucket, qint64 id,
+                                        const QString &relativePath)
+{
+    if (relativePath.isEmpty())
+        return QString();
+    return packageDir(linkAddress, bucket, id) + QLatin1Char('/') + relativePath;
+}
+
 bool StorageService::isSafeFormName(const QString &form)
 {
     if (form.isEmpty() || form.size() > 64)

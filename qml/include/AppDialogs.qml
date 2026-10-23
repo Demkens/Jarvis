@@ -38,6 +38,8 @@ Item {
     function openSettings() { settingsDialog.open() }
     // 标签管理弹窗（顶栏「工具 → 标签管理…」→ Main → 此处）
     function openTagManager() { tagManagerDialog.openManager() }
+    // 图片查重窗口（顶栏「工具 → 图片查重…」→ Main → 此处）：单实例，显示并刷新指纹状态
+    function openDedup() { dedupWindow.openWindow() }
     // 标签导出（顶栏「工具 → 标签导出…」→ Main → 此处）：直接写入默认导出位置，无弹窗
     function exportTags() {
         const result = typeEngine.exportTags()
@@ -95,6 +97,12 @@ Item {
     // 标签管理（全库共享标签树的维护入口）
     TagManagerDialog {
         id: tagManagerDialog
+    }
+
+    // 图片查重窗口：独立顶层窗口；库内结果行可跳转详情窗口
+    DedupWindow {
+        id: dedupWindow
+        onDetailRequested: function (fileId) { detailWindow.openPackage(fileId) }
     }
 
     // 导出目标：选择空文件夹后原样复原包文件（开发文档 5.6）

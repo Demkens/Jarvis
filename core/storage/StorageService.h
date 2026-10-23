@@ -40,6 +40,9 @@ public:
     static int bucketOf(qint64 id);
     // 包内序号文件名的数字部分：1→"001"，999→"999"，1000→"1000"
     static QString indexedName(int index);
+    // 包内相对路径 → 包目录下绝对路径（查重/补指纹定位实际文件用）
+    static QString packageFilePath(const QString &linkAddress, int bucket, qint64 id,
+                                   const QString &relativePath);
     // 类型标识合法性校验（安全标识符：小写字母开头）。类型已无分表，form 不再拼进 SQL，
     // 此处仅作外部输入的格式校验。
     static bool isSafeFormName(const QString &form);

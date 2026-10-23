@@ -11,6 +11,7 @@
 class QQmlApplicationEngine;
 class AppPaths;
 class CreatorService;
+class DedupService;
 class EventBus;
 class ImportService;
 class PackageService;
@@ -43,6 +44,7 @@ private:
     std::unique_ptr<CreatorService> m_creators;
     std::unique_ptr<StorageService> m_storage;
     std::unique_ptr<PackageService> m_packages;
+    std::unique_ptr<DedupService> m_dedup;
     std::unique_ptr<ImportService> m_import;
     std::unique_ptr<TagService> m_tags;
     std::unique_ptr<SettingsService> m_settings;

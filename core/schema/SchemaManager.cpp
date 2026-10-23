@@ -104,6 +104,37 @@ const QStringList kCoreBaselineStatements = {
     QStringLiteral("CREATE INDEX IF NOT EXISTS idx_file_tag_tag ON file_tag(tag_id)"),
 };
 
+// v2：M9 查重扩展。
+// - photohash 以 (文件 id, 包内相对路径) 为主键，一个数据包对应多行；
+//   导入时写入 content_hash / size_bytes / aHash / pHash / dHash，历史数据由「补指纹」补齐；
+// - filmhash 仅建表预留，本期不写入数据，视频指纹格式后续以 JSON 约定；
+// - content/size 建索引用于「完全重复」点查与文件大小预筛。
+const QStringList kSchemaV2Statements = {
+    QStringLiteral(R"(
+        CREATE TABLE IF NOT EXISTS photohash (
+            id            INTEGER NOT NULL,
+            relative_path TEXT    NOT NULL,
+            content_hash  TEXT,
+            size_bytes    INTEGER,
+            ahash         TEXT,
+            phash         TEXT,
+            dhash         TEXT,
+            algo_version  INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (id, relative_path),
+            FOREIGN KEY (id) REFERENCES file(id) ON DELETE CASCADE
+        ))"),
+    QStringLiteral("CREATE INDEX IF NOT EXISTS idx_photohash_content ON photohash(content_hash)"),
+    QStringLiteral("CREATE INDEX IF NOT EXISTS idx_photohash_size ON photohash(size_bytes)"),
+    QStringLiteral(R"(
+        CREATE TABLE IF NOT EXISTS filmhash (
+            id                INTEGER NOT NULL,
+            relative_path     TEXT    NOT NULL,
+            video_fingerprint TEXT,
+            PRIMARY KEY (id, relative_path),
+            FOREIGN KEY (id) REFERENCES file(id) ON DELETE CASCADE
+        ))"),
+};
+
 } // namespace
 
 bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
@@ -126,7 +157,11 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
         return false;
 
     for (int version = currentVersion + 1; version <= kCoreSchemaVersion; ++version) {
-        const QStringList *statements = (version == 1) ? &kCoreBaselineStatements : nullptr;
+        const QStringList *statements = nullptr;
+        if (version == 1)
+            statements = &kCoreBaselineStatements;
+        else if (version == 2)
+            statements = &kSchemaV2Statements;
         if (statements == nullptr)
             continue;
         for (const QString &statement : *statements) {

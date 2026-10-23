@@ -1,11 +1,13 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
 #include "storage/StorageService.h"
 
+class DedupService;
 class LibraryService;
 class TypePackageManager;
 
@@ -19,11 +21,15 @@ class ImportService : public QObject
 
 public:
     ImportService(LibraryService *library, StorageService *storage,
-                  TypePackageManager *typePackages, QObject *parent = nullptr);
+                  TypePackageManager *typePackages, DedupService *dedup,
+                  QObject *parent = nullptr);
 
     // 执行一批计划。返回：
     // {ok: 是否全部成功, total, success, failed,
-    //  results: [{index, ok, id?, message?}], importedIds: [...]}
+    //  results: [{index, ok, id?, message?,
+    //             duplicate?, duplicates?: [{path, size, existing: [...]}]}],
+    //  importedIds: [...]}
+    // 每个计划在复制前做完全重复预检；命中的计划不导入，其余计划继续执行。
     Q_INVOKABLE QVariantMap executePlans(const QString &form, const QVariantList &plans);
 
     // 预处理扫描。返回：
@@ -44,10 +50,14 @@ public:
     Q_INVOKABLE bool isOnline() const;
 
 private:
-    static bool isImageFile(const QString &fileName);
     static ImportPlan planFromMap(const QString &form, const QVariantMap &map);
+    // 导入成功后写入图片内容指纹；prechecked 为预检返回的 files 列表，用于复用已算哈希。
+    // 失败仅告警，不回滚已提交的数据包。
+    void indexImportedFiles(qint64 fileId, const QStringList &files,
+                            const QVariantList &prechecked = {});
 
     LibraryService *m_library;
     StorageService *m_storage;
     TypePackageManager *m_typePackages;
+    DedupService *m_dedup;
 };
