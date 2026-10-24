@@ -21,6 +21,9 @@ Window {
     property int packageId: 0
     property var detail: ({})
     property var fileList: []
+    // 文本包的章节行：{kind: "volume"|"chapter", title, number, size}
+    property var chapterRows: []
+    property bool isTextPackage: false
     property string detailTitle: ""
     // 当前包已绑定标签的显示名（按 tagTree DFS 序映射后顺序与 fileTags 一致）
     property var tagNames: []
@@ -93,13 +96,57 @@ Window {
             window.refresh()
     }
 
+    // 函数: 按类型包声明的包内布局判断是否为整本文本包
+    // 输入: form —— 类型标识；输出: bool
+    function isTextLayout(form) {
+        if (!form)
+            return false
+        var list = typeEngine.enabledTypes
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i].form === form)
+                return list[i].layoutKind === "wholeBookText"
+        }
+        return false
+    }
+
+    // 函数: 文本包 → 章节行（卷标题分组 + 章标题，含每章字节数）
+    // 输入: view —— PackageViewContext；输出: 行数组
+    function buildChapterRows(view) {
+        var rows = []
+        var chapters = view.chapters || []
+        if (chapters.length === 0)
+            return rows
+
+        // 章文件大小按相对路径索引，避免 O(n²) 查表
+        var sizeByPath = ({})
+        var files = view.files || []
+        for (var f = 0; f < files.length; ++f)
+            sizeByPath[files[f].relativePath] = files[f].size
+
+        var lastVolume = -1
+        for (var i = 0; i < chapters.length; ++i) {
+            var c = chapters[i]
+            var vol = c.volume || 0
+            if (vol > 0 && vol !== lastVolume) {
+                lastVolume = vol
+                rows.push({ kind: "volume", title: c.volumeName || ("第 " + vol + " 卷"),
+                            number: 0, size: 0 })
+            }
+            rows.push({ kind: "chapter", title: c.title, number: i + 1,
+                        size: sizeByPath[c.file] || 0 })
+        }
+        return rows
+    }
+
     function openPackage(id) {
         window.packageId = id
         window.detail = typeEngine.packageDetail(id)
         window.detailTitle = window.detail.title || "untitled"
         window.tagNames = window.loadTagNames()
+        window.isTextPackage = window.isTextLayout(window.detail.type_form)
         var view = typeEngine.createPackageView(id)
         window.fileList = view ? view.files : []
+        window.chapterRows = (view && window.isTextPackage) ? window.buildChapterRows(view) : []
         window.show()
         window.requestActivate()
     }
@@ -234,19 +281,84 @@ Window {
                 Layout.leftMargin: 16
                 Layout.topMargin: 14
                 Layout.bottomMargin: 8
-                text: "包内文件（" + window.fileList.length + " 项）"
+                text: window.isTextPackage
+                      ? "章节（" + window.chapterRows.length + " 项）"
+                      : "包内文件（" + window.fileList.length + " 项）"
                 font.pixelSize: 14
                 font.bold: true
             }
 
-            GridView {
+            // 文本包：按章清单列出（卷标题只分组，不可点击）
+            ListView {
+                id: chapterList
+                visible: window.isTextPackage
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.bottomMargin: 12
                 clip: true
-                model: window.fileList
+                model: window.chapterRows
+                boundsBehavior: Flickable.StopAtBounds
+
+                delegate: Item {
+                    required property var modelData
+                    width: chapterList.width
+                    height: modelData.kind === "volume" ? 30 : 28
+
+                    Text {
+                        visible: modelData.kind === "volume"
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.title
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: "#4a5262"
+                        elide: Text.ElideRight
+                    }
+
+                    RowLayout {
+                        visible: modelData.kind === "chapter"
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        spacing: 8
+
+                        Text {
+                            Layout.preferredWidth: 28
+                            horizontalAlignment: Text.AlignRight
+                            text: modelData.number + "."
+                            font.pixelSize: 12
+                            color: "#7a8394"
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.title
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: window.formatBytes(modelData.size)
+                            font.pixelSize: 11
+                            color: "#9aa3b2"
+                        }
+                    }
+                }
+            }
+
+            // 图片包：缩略图带
+            GridView {
+                visible: !window.isTextPackage
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.bottomMargin: 12
+                clip: true
+                // 文本包时给空模型：GridView 即使 visible=false 也会实例化委托，
+                // 委托里的 Image 会把 .txt 当图片加载并报解码错误（日志噪声），此处直接不建项
+                model: window.isTextPackage ? [] : window.fileList
                 cellWidth: 190
                 cellHeight: 150
                 boundsBehavior: Flickable.StopAtBounds

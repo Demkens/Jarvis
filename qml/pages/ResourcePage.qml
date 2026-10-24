@@ -335,8 +335,12 @@ Item {
     Component {
         id: cardDelegate
         Rectangle {
+            id: cardRoot
             property real cardWidth: 200
             property real cardHeight: 200
+            // 无封面包（如小说纯文本包）：用类型名 + 标题占位，避免卡片整块空白
+            readonly property bool hasCover: modelData.coverUrl !== undefined
+                                             && String(modelData.coverUrl) !== ""
             width: cardWidth
             height: cardHeight
             radius: 8
@@ -345,10 +349,43 @@ Item {
             // 容器比例 = 图片比例（AR 已入库）→ 完整显示且无留白
             Image {
                 anchors.fill: parent
+                visible: cardRoot.hasCover
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
                 smooth: true
                 source: modelData.coverUrl || ""
+            }
+
+            // 占位封面：唯一点缀是标题，与有封面时视觉层级一致
+            Rectangle {
+                anchors.fill: parent
+                visible: !cardRoot.hasCover
+                color: "#eef1f6"
+
+                Column {
+                    anchors.centerIn: parent
+                    width: parent.width - 24
+                    spacing: 6
+                    Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        text: modelData.title || "untitled"
+                        color: "#3a4256"
+                        font.pixelSize: 13
+                        font.bold: true
+                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 3
+                    }
+                    Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        text: modelData.creatorName || "佚名"
+                        color: "#7a8394"
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
+                }
             }
 
             // 悬停：轻微放大并提升层级，避免被相邻卡片压住

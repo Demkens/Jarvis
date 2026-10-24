@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
+#include <QRegularExpression>
 #include <QDebug>
 #include <cmath>
 
@@ -31,6 +32,25 @@ qreal readAspectRatio(const QString &imagePath)
     if (!size.isValid() || size.height() <= 0)
         return 0.0;
     return static_cast<qreal>(size.width()) / static_cast<qreal>(size.height());
+}
+
+// 包内相对路径安全校验：拒绝绝对路径、盘符、以及任何 ".." 片段
+bool isSafeRelativePath(const QString &relativePath)
+{
+    if (relativePath.isEmpty() || relativePath.size() > 512)
+        return false;
+    if (relativePath.startsWith(QLatin1Char('/')) || relativePath.startsWith(QLatin1Char('\\')))
+        return false;
+    if (relativePath.contains(QLatin1Char(':')))  // Windows 盘符
+        return false;
+
+    const QStringList parts = relativePath.split(QRegularExpression(QStringLiteral("[/\\\\]")),
+                                                 Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        if (part == QStringLiteral(".") || part == QStringLiteral(".."))
+            return false;
+    }
+    return !parts.isEmpty();
 }
 
 // 递归复制目录（导出保留子目录结构用）
@@ -138,18 +158,21 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     if (!isSafeFormName(plan.form))
         return fail(AppError::Validation, QStringLiteral("非法类型标识：%1").arg(plan.form));
 
-    if (plan.files.isEmpty())
+    if (plan.entries.isEmpty())
         return fail(AppError::Validation, QStringLiteral("导入计划没有源文件"));
 
-    for (const QString &file : plan.files) {
-        if (!QFileInfo(file).isFile())
-            return fail(AppError::Io, QStringLiteral("源文件不存在或不是文件：%1").arg(file));
+    for (const ImportEntry &item : plan.entries) {
+        if (!QFileInfo(item.sourcePath).isFile())
+            return fail(AppError::Io,
+                        QStringLiteral("源文件不存在或不是文件：%1").arg(item.sourcePath));
+        if (!isSafeRelativePath(item.relativePath))
+            return fail(AppError::Validation,
+                        QStringLiteral("包内相对路径非法：%1").arg(item.relativePath));
     }
 
-    QString coverSource = plan.coverSourcePath.trimmed();
-    if (coverSource.isEmpty())
-        coverSource = plan.files.first();
-    else if (!QFileInfo(coverSource).isFile())
+    // 封面可选：纯文本包没有封面源，此时不生成封面（封面目录留空、AR 兜底 1.0）
+    const QString coverSource = plan.coverSourcePath.trimmed();
+    if (!coverSource.isEmpty() && !QFileInfo(coverSource).isFile())
         return fail(AppError::Io, QStringLiteral("封面源文件不存在：%1").arg(coverSource));
 
     // 创作日期（v5 起为核心字段 file.creation_date）：格式固定 YYYY-MM-DD，导入必填；
@@ -164,8 +187,9 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     const QString title = plan.title.trimmed().isEmpty() ? QStringLiteral("untitled")
                                                          : plan.title.trimmed();
 
-    // 封面长宽比（瀑布流布局用）：封面为等比缩放，其 AR 等于原图 AR；读文件头即可
-    const qreal coverAspect = readAspectRatio(coverSource);
+    // 封面长宽比（瀑布流布局用）：封面为等比缩放，其 AR 等于原图 AR；读文件头即可。
+    // 无封面（纯文本包）时取 1.0，保证资源页布局不出现 0 宽高
+    const qreal coverAspect = coverSource.isEmpty() ? 1.0 : readAspectRatio(coverSource);
 
     DbAccess &db = m_library->dbAccess();
 
@@ -248,27 +272,28 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
         return -1;
     };
 
-    // ---- 3. 复制入桶（复制式导入，绝不移动/删除源文件；重命名为包内序号）----
+    // ---- 3. 复制入桶（复制式导入，绝不移动/删除源文件；按条目相对路径落位）----
     if (!QDir().mkpath(targetDir))
         return abortImport(QStringLiteral("包目录创建失败：%1").arg(targetDir));
 
     qint64 totalSize = 0;
-    for (int index = 0; index < plan.files.size(); ++index) {
-        const QFileInfo sourceInfo(plan.files.at(index));
-        const QString suffix = sourceInfo.suffix();
-        const QString targetFile = targetDir + QLatin1Char('/') + indexedName(index + 1)
-                                   + (suffix.isEmpty() ? QString()
-                                                       : QLatin1Char('.') + suffix);
-        if (!QFile::copy(sourceInfo.absoluteFilePath(), targetFile)) {
+    for (const ImportEntry &item : plan.entries) {
+        const QString targetFile =
+            targetDir + QLatin1Char('/') + item.relativePath;
+        // 子目录（如小说分卷）按需创建
+        const QString parentDir = QFileInfo(targetFile).absolutePath();
+        if (!QDir().mkpath(parentDir))
+            return abortImport(QStringLiteral("子目录创建失败：%1").arg(parentDir));
+        if (!QFile::copy(item.sourcePath, targetFile)) {
             if (!QFileInfo::exists(targetFile))
                 return abortImport(QStringLiteral("文件复制失败：%1 → %2")
-                                       .arg(sourceInfo.absoluteFilePath(), targetFile));
+                                       .arg(item.sourcePath, targetFile));
         }
         totalSize += QFileInfo(targetFile).size();
     }
 
-    // ---- 4. 封面（核心统一生成，清晰度固定为对角线 kCoverDiagonal）----
-    if (!generateCover(coverSource, targetCover, error))
+    // ---- 4. 封面（可选：核心统一生成，清晰度固定为对角线 kCoverDiagonal）----
+    if (!coverSource.isEmpty() && !generateCover(coverSource, targetCover, error))
         return abortImport(QStringLiteral("封面生成失败"));
 
     // ---- 5. 写创作者关联（多对多；空输入已归为「佚名」，故至少一条）----
@@ -301,7 +326,7 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
 
     emit m_events->packageCreated(id, plan.form);
     qInfo().noquote() << "[storage] 已导入包: id =" << id << "桶 =" << bucket << "标题 ="
-                      << title << "文件数 =" << plan.files.size() << "大小 =" << totalSize;
+                      << title << "文件数 =" << plan.entries.size() << "大小 =" << totalSize;
     return id;
 }
 

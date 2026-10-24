@@ -305,6 +305,14 @@ Window {
             anchors.fill: parent
             spacing: 0
             MenuItemRect {
+                text: "启用类型…"
+                onClicked: {
+                    rowMenu.close()
+                    typesForm.libName = rowMenu.libName
+                    typesForm.open()
+                }
+            }
+            MenuItemRect {
                 text: "重命名库…"
                 enabled: rowMenu.libName !== libraryService.currentName
                 onClicked: {
@@ -455,6 +463,110 @@ Window {
         }
 
         onOpened: createForm.reset()
+    }
+
+    // ============ 启用类型表单（内嵌 Popup） ============
+    // 说明：新建库时勾选的类型会写入该库 type 表；本表单用于给既有库补启新类型
+    //      （如新安装的 novel），已有数据包的类型不允许取消启用（核心会拒绝并回传原因）。
+    Popup {
+        id: typesForm
+        modal: true
+        x: (win.width - width) / 2
+        y: (win.height - height) / 2
+        width: 420
+        padding: 16
+
+        property string libName: ""
+        property string errText: ""
+
+        // 函数: 读取该库已启用类型并回填勾选状态
+        // 输入/输出: 无（读 typesForm.libName）
+        function reload() {
+            typesForm.errText = ""
+            const result = libraryService.enabledTypes(typesForm.libName)
+            const forms = (result && result.ok) ? (result.forms || []) : []
+            if (result && !result.ok)
+                typesForm.errText = result.message || "读取启用类型失败"
+            // 已实例化的复选框直接改 checked：绑定的初始值在用户点击后会断，故每次打开都重设
+            for (let i = 0; i < typeChecks.count; ++i) {
+                const box = typeChecks.itemAt(i)
+                box.checked = forms.indexOf(box.form) >= 0
+            }
+        }
+
+        // 函数: 提交勾选结果
+        // 输入/输出: 无；成功关闭，失败显示原因
+        function submit() {
+            const forms = []
+            for (let i = 0; i < typeChecks.count; ++i) {
+                const box = typeChecks.itemAt(i)
+                if (box.checked && forms.indexOf(box.form) === -1)
+                    forms.push(box.form)
+            }
+            const result = libraryService.setEnabledTypes(typesForm.libName, forms)
+            if (result && result.ok) {
+                // 若改的是当前库，类型清单需立即刷新（资源页筛选、文件菜单导入项都读它）
+                if (typesForm.libName === libraryService.currentName)
+                    typeEngine.refresh()
+                typesForm.close()
+            } else {
+                typesForm.errText = result ? result.message : "设置调用未返回结果"
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            Text {
+                text: "启用类型 · " + typesForm.libName
+                font.pixelSize: 15
+                font.bold: true
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+            }
+
+            Repeater {
+                id: typeChecks
+                model: typePackageManager.loadedPackages
+                delegate: CheckBox {
+                    required property var modelData
+                    property string form: modelData.form
+                    text: modelData.displayName + "（" + modelData.form + "）"
+                    leftPadding: 18
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                color: "#e5675f"
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                visible: typesForm.errText !== ""
+                text: typesForm.errText
+            }
+
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: "#aab3c5"
+                font.pixelSize: 11
+                text: "提示：已有数据包的类型不能取消启用；取消启用只移除该库的类型登记，不删除任何数据包。"
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button { text: "取消"; onClicked: typesForm.close() }
+                Button {
+                    text: "保存"
+                    highlighted: true
+                    onClicked: typesForm.submit()
+                }
+            }
+        }
+
+        onOpened: typesForm.reload()
     }
 
     // ============ 重命名表单（内嵌 Popup） ============

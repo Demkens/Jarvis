@@ -67,6 +67,7 @@ bool TypePackage::fromJson(const QJsonObject &json, TypePackage &out, QString &e
     out.version = static_cast<int>(version);
     out.coreMinVersion = coreMinVersion;
     out.packageLayoutKind = layoutKind;
+    out.packageLayout = layoutValue.toObject().toVariantMap();
     out.browseOrder = browseOrder;
 
     // stats：本期只解析不渲染。字段缺失即空；存在但不是 JSON 对象时仅告警，

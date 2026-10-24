@@ -37,6 +37,29 @@ Dialog {
         return dialog.form
     }
 
+    // 函数: 当前类型是否为整本文本布局（决定预处理页的字段与提交结构）
+    // 输入/输出: 无；输出: bool
+    function isBookLayout() {
+        var list = typeEngine.enabledTypes
+        for (var i = 0; i < list.length; ++i) {
+            if (list[i].form === dialog.form)
+                return list[i].layoutKind === "wholeBookText"
+        }
+        return false
+    }
+
+    // 函数: 预处理计划的一行摘要（图片类型报文件数，文本类型报章节数）
+    // 输入: p —— 扫描得到的计划对象；输出: 摘要文本
+    function planSummary(p) {
+        if (dialog.isBookLayout()) {
+            if (p.chapterCount > 0)
+                return p.chapterCount + " 章 · " + (p.firstTitle || "") + " → "
+                        + (p.lastTitle || "")
+            return "章节数导入时统计"
+        }
+        return (p.files ? p.files.length : 0) + " 个文件"
+    }
+
     // 函数: 清空弹窗所有瞬时状态（类型/通道由 start() 传入，此处统一置空）
     function resetDialog() {
         form = ""
@@ -172,13 +195,18 @@ Dialog {
                             var plans = []
                             for (var i = 0; i < scanPlans.length; ++i) {
                                 var p = scanPlans[i]
-                                plans.push({
+                                var plan = {
                                     title: p.title,
                                     creatorName: p.creatorName,
                                     creationDate: p.creationDate,
-                                    files: p.files,
                                     coverSourcePath: p.coverSourcePath
-                                })
+                                }
+                                // 文本布局以整本 txt 为源，图片布局以文件清单为源
+                                if (dialog.isBookLayout())
+                                    plan.sourcePath = p.sourcePath
+                                else
+                                    plan.files = p.files
+                                plans.push(plan)
                             }
                             dialog.showResult(importService.executePlans(dialog.form, plans))
                         }
@@ -213,7 +241,7 @@ Dialog {
 
                 Label {
                     visible: scanPlans.length === 0
-                    text: "约定：每个子文件夹 = 一个图集包（图片按文件名排序，可放 meta.json 补标题/画家/日期/封面）；根目录散图合并为一个包。"
+                    text: importService.preprocessHint(dialog.form)
                     font.pixelSize: 12
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
@@ -258,7 +286,10 @@ Dialog {
                                         }
                                         RowLayout {
                                             spacing: 8
-                                            Label { text: "画家"; font.pixelSize: 12 }
+                                            Label {
+                                                text: dialog.isBookLayout() ? "作者" : "画家"
+                                                font.pixelSize: 12
+                                            }
                                             TextField {
                                                 text: dialog.scanPlans[index].creatorName
                                                 placeholderText: "佚名"
@@ -276,11 +307,10 @@ Dialog {
                                             }
                                         }
                                         Text {
-                                            text: dialog.scanPlans[index].files.length + " 个文件"
-                                                  + (dialog.scanPlans[index].coverSourcePath
-                                                     ? "；封面：" + dialog.scanPlans[index].coverSourcePath
-                                                         .split(/[\\/]/).pop() : "；封面默认首张")
+                                            Layout.fillWidth: true
+                                            text: dialog.planSummary(dialog.scanPlans[index])
                                             font.pixelSize: 11
+                                            elide: Text.ElideMiddle
                                         }
                                     }
                                 }

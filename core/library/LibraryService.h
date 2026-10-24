@@ -50,6 +50,15 @@ public:
     // 拉起新进程打开指定库（多进程模型：每库一窗口）。
     Q_INVOKABLE QVariantMap launchLibrary(const QString &name);
 
+    // 读取某库已启用类型。返回 {ok, forms: [form...]}；库不存在时 ok = false。
+    // 数据以库内 type 表为准（config 的 support 仅作快速检视，可能与 db 漂移）。
+    Q_INVOKABLE QVariantMap enabledTypes(const QString &name) const;
+    // 设置某库已启用类型：新增缺失的登记行、移除未被勾选的类型行。
+    // 已存在数据包的类型不允许移除（避免数据失去类型归属），整体拒绝并返回原因。
+    // 输入：name 库名；forms 期望启用的 form 清单（去重，未安装的类型被忽略）
+    // 输出：{ok, message?, added: [form], removed: [form]}
+    Q_INVOKABLE QVariantMap setEnabledTypes(const QString &name, const QStringList &forms);
+
     QString currentName() const { return m_currentName; }
     bool isOpen() const { return m_db.isOpen(); }
     QVariantList libraries() const;

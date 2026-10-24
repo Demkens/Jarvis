@@ -1,0 +1,34 @@
+{
+    "form": "novel",
+    "displayName": "小说",
+    "version": 1,
+    "coreMinVersion": "0.1.0",
+    "packageLayout": {
+        "kind": "wholeBookText",
+        "manifest": "config.txt",
+        "chapterRules": [
+            {
+                "id": "cn-number",
+                "level": "chapter",
+                "pattern": "^\\s*(?:第\\s*[0-9零一二三四五六七八九十百千万两〇]+\\s*[章节回卷集]|正文\\s*第?\\s*[0-9一二三四五六七八九十百千]+\\s*[章节])(?:[\\s:：、.．·—-]+.*)?$"
+            },
+            {
+                "id": "arabic-number",
+                "level": "chapter",
+                "pattern": "^\\s*(?:Chapter|CHAPTER|chapter)\\s+\\d+.*$"
+            },
+            {
+                "id": "bracket-title",
+                "level": "chapter",
+                "pattern": "^\\s*[【〖\\[][^】〗\\]]{1,40}[】〗\\]]\\s*$"
+            },
+            {
+                "id": "volume-cn",
+                "level": "volume",
+                "pattern": "^\\s*第\\s*[0-9零一二三四五六七八九十百千万两〇]+\\s*[卷部篇]\\s*[^。！？.!?]*$"
+            }
+        ]
+    },
+    "browseOrder": "sequence",
+    "export": { "kind": "folder", "keepNames": true }
+}

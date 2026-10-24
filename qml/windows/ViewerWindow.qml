@@ -32,14 +32,15 @@ Window {
     }
 
     onClosing: function () {
-        // 关闭前把 viewer 当前页同步进 positionJson 再保存，
-        // 避免防抖窗口（400ms）内翻页后立即关窗丢失最后位置
-        if (packageView !== null) {
-            const v = viewerLoader.item
-            if (v && v.pageCount() > 0)
-                packageView.positionJson = JSON.stringify({index: v.pageIndex + 1})
+        // 关闭前先让类型页把当前浏览位置同步进 positionJson（各类型语义不同：
+        // 画作是 {index}，小说是 {chapter, scroll}），再由核心统一落库。
+        // 类型页未提供 savePositionNow 时，退化为保存已写入的 positionJson，
+        // 避免核心容器硬编码某一类型的记忆结构。
+        const v = viewerLoader.item
+        if (v && typeof v.savePositionNow === "function")
+            v.savePositionNow()
+        else if (packageView !== null)
             packageView.savePosition()
-        }
         viewerLoader.active = false
         packageView = null
     }

@@ -16,7 +16,10 @@ public:
     QString displayName;           // 显示名（如 画作）
     int version = 0;               // 类型包契约版本
     QString coreMinVersion;        // 依赖的最低核心版本
-    QString packageLayoutKind;     // 包内文件规范（draw = imageSequence）
+    QString packageLayoutKind;     // 包内文件规范（draw = imageSequence，novel = wholeBookText）
+    // packageLayout 的完整声明（kind/naming/chapterRules 等）。核心按 kind 分派导入与扫描行为，
+    // 其余字段（如小说切分规则表）由声明方定义，核心只消费不解释其含义。
+    QVariantMap packageLayout;
     QString browseOrder;           // 预设浏览顺序声明（draw = sequence）
     // type.json 的 stats 字段声明（结构由类型包自定）。本期只解析不渲染，
     // 作为后续统计维度的扩展点；字段缺失或非法时保持为空，不影响类型包加载。

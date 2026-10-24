@@ -47,12 +47,16 @@ Item {
         id: positionTimer
         interval: 400
         repeat: false
-        onTriggered: {
-            if (!packageView)
-                return
-            packageView.positionJson = JSON.stringify({index: viewer.pageIndex + 1})
-            packageView.savePosition()
-        }
+        onTriggered: viewer.savePositionNow()
+    }
+
+    // 函数: 立即把当前页写入浏览记忆
+    // 输入/输出: 无；容器关窗时调用，避免防抖窗口内翻页后立即关窗丢失最后位置
+    function savePositionNow() {
+        if (!packageView)
+            return
+        packageView.positionJson = JSON.stringify({index: viewer.pageIndex + 1})
+        packageView.savePosition()
     }
 
     focus: true

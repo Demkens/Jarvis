@@ -495,6 +495,159 @@ QVariantMap LibraryService::renameLibrary(const QString &oldName, const QString 
     return okResult();
 }
 
+QVariantMap LibraryService::enabledTypes(const QString &name) const
+{
+    const QString trimmed = name.trimmed();
+    if (!m_config.contains(trimmed))
+        return failResult(QStringLiteral("库不存在：%1").arg(trimmed));
+
+    AppError error;
+    QStringList forms;
+
+    // 当前库走既有连接；其他库临时开一个连接读取（DbAccess 自带唯一连接名，随作用域关闭）
+    if (trimmed == m_currentName && m_db.isOpen()) {
+        const QList<QVariantMap> rows =
+            m_db.select(QStringLiteral("SELECT form FROM type ORDER BY id"), {}, &error);
+        if (!error.ok())
+            return failResult(error);
+        for (const QVariantMap &row : rows)
+            forms.append(row.value(QStringLiteral("form")).toString());
+    } else {
+        DbAccess temp;
+        if (!temp.open(m_paths->databasePath(trimmed), &error))
+            return failResult(error);
+        const QList<QVariantMap> rows =
+            temp.select(QStringLiteral("SELECT form FROM type ORDER BY id"), {}, &error);
+        if (!error.ok()) {
+            temp.close();
+            return failResult(error);
+        }
+        for (const QVariantMap &row : rows)
+            forms.append(row.value(QStringLiteral("form")).toString());
+        temp.close();
+    }
+
+    return {
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("forms"), forms},
+    };
+}
+
+QVariantMap LibraryService::setEnabledTypes(const QString &name, const QStringList &forms)
+{
+    const QString trimmed = name.trimmed();
+    if (!m_config.contains(trimmed))
+        return failResult(QStringLiteral("库不存在：%1").arg(trimmed));
+
+    // 规整目标集合：去重、跳过未安装的类型包
+    QStringList wanted;
+    for (const QString &raw : forms) {
+        const QString form = raw.trimmed();
+        if (form.isEmpty() || wanted.contains(form))
+            continue;
+        if (m_typePackages->package(form) == nullptr) {
+            qWarning().noquote() << "[library] 忽略未安装的类型包：" << form;
+            continue;
+        }
+        wanted.append(form);
+    }
+    if (wanted.isEmpty())
+        return failResult(QStringLiteral("至少要启用一个类型"));
+
+    // 当前库用既有连接，其他库临时开连接
+    DbAccess temp;
+    DbAccess *db = &m_db;
+    const bool isCurrent = trimmed == m_currentName && m_db.isOpen();
+    if (!isCurrent) {
+        AppError openError;
+        if (!temp.open(m_paths->databasePath(trimmed), &openError))
+            return failResult(openError);
+        db = &temp;
+    }
+    auto finish = [&](QVariantMap result) {
+        if (!isCurrent)
+            temp.close();
+        return result;
+    };
+
+    // 现有类型及其数据包数量：有数据的类型不可取消启用
+    AppError error;
+    const QList<QVariantMap> rows = db->select(
+        QStringLiteral("SELECT t.form AS form, COUNT(f.id) AS cnt FROM type t "
+                       "LEFT JOIN file f ON f.type_id = t.id GROUP BY t.form ORDER BY t.id"),
+        {}, &error);
+    if (!error.ok())
+        return finish(failResult(error));
+
+    QStringList existing;
+    QHash<QString, int> packageCounts;
+    for (const QVariantMap &row : rows) {
+        const QString form = row.value(QStringLiteral("form")).toString();
+        existing.append(form);
+        packageCounts.insert(form, row.value(QStringLiteral("cnt")).toInt());
+    }
+
+    for (const QString &form : existing) {
+        if (wanted.contains(form) || packageCounts.value(form) <= 0)
+            continue;
+        return finish(failResult(QStringLiteral("类型 %1 下已有 %2 个数据包，不能取消启用")
+                                     .arg(form)
+                                     .arg(packageCounts.value(form))));
+    }
+
+    QVariantList added;
+    QVariantList removed;
+
+    if (!db->transaction(&error))
+        return finish(failResult(error));
+
+    for (const QString &form : existing) {
+        if (wanted.contains(form))
+            continue;
+        if (!db->execute(QStringLiteral("DELETE FROM type WHERE form = :form"),
+                         {{QStringLiteral("form"), form}}, &error)) {
+            db->rollback();
+            return finish(failResult(error));
+        }
+        removed.append(form);
+    }
+    for (const QString &form : wanted) {
+        if (existing.contains(form))
+            continue;
+        const TypePackage *package = m_typePackages->package(form);
+        if (!db->execute(QStringLiteral("INSERT INTO type (name, form) VALUES (:name, :form)"),
+                         {{QStringLiteral("name"), package->displayName},
+                          {QStringLiteral("form"), form}},
+                         &error)) {
+            db->rollback();
+            return finish(failResult(QStringLiteral("类型 %1 登记失败：%2")
+                                         .arg(form, error.message)));
+        }
+        added.append(form);
+    }
+    if (!db->commit(&error)) {
+        db->rollback();
+        return finish(failResult(error));
+    }
+
+    // 同步 config 的 support（快速检视用）
+    LibraryEntry entry = m_config.entry(trimmed);
+    entry.support = wanted;
+    m_config.upsert(entry);
+    if (!persistConfig(&error))
+        return finish(failResult(error));
+
+    emit librariesChanged();
+    qInfo().noquote() << "[library] 已更新启用类型:" << trimmed
+                      << "新增" << added << "移除" << removed;
+
+    return finish(QVariantMap{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("added"), added},
+        {QStringLiteral("removed"), removed},
+    });
+}
+
 QVariantMap LibraryService::exportLibrary(const QString &name, const QString &destDir)
 {
     const QString trimmed = name.trimmed();

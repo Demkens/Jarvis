@@ -8,7 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 图表用 Qt Graphs（M7 统计页）。其 2D 渲染基于 Qt Quick Shapes，与纯 QML 应用同路，
 # 不需要 Widgets / QApplication（旧的 Qt Charts 因 2D 走 Graphics View 才必须带上二者，
 # 且已自 Qt 6.10 起废弃），故此处不再请求 Charts 与 Widgets 组件。
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Sql Graphs)
+# Core5Compat：小说源 txt 的 GB18030 解码依赖 QTextCodec（Qt6 未提供等价内建 API）
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Sql Graphs Core5Compat)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -41,6 +42,7 @@ set (CORE_HEADERS
     core/stats/StatsService.h
     core/storage/StorageService.h
     core/tag/TagService.h
+    core/text/BookSplitter.h
     core/types/TypeEngine.h
     core/types/TypePackage.h
     core/types/TypePackageManager.h
@@ -71,6 +73,7 @@ add_library(jarvis_core STATIC
     core/settings/SettingsService.cpp
     core/stats/StatsService.cpp
     core/import/ImportService.cpp
+    core/text/BookSplitter.cpp
     core/types/TypeEngine.cpp
     core/ui/PackageViewContext.cpp
 )
@@ -84,7 +87,7 @@ target_compile_definitions(jarvis_core PUBLIC
 )
 
 target_link_libraries(jarvis_core PUBLIC
-    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Sql
+    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Sql Qt6::Core5Compat
 )
 
 # ---- jarvis：主程序（组合根 + QML）----
