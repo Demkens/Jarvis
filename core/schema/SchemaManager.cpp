@@ -135,6 +135,20 @@ const QStringList kSchemaV2Statements = {
         ))"),
 };
 
+// v3：M8a 短笔记扩展。
+// 只存笔记元数据；正文由 NoteService 以 Markdown 写入 envs/<库名>/note/<id>.md，
+// 库内不存正文，避免文件与数据库两份内容互相覆盖。
+// 笔记与数据包的关联（file_note）延后到 M8b，届时另起 v4 迁移。
+const QStringList kSchemaV3Statements = {
+    QStringLiteral(R"(
+        CREATE TABLE IF NOT EXISTS note (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            title        TEXT    NOT NULL DEFAULT '',
+            created_time TEXT    NOT NULL,
+            updated_time TEXT    NOT NULL
+        ))"),
+};
+
 } // namespace
 
 bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
@@ -162,6 +176,8 @@ bool SchemaManager::ensureCoreSchema(DbAccess &db, AppError *error)
             statements = &kCoreBaselineStatements;
         else if (version == 2)
             statements = &kSchemaV2Statements;
+        else if (version == 3)
+            statements = &kSchemaV3Statements;
         if (statements == nullptr)
             continue;
         for (const QString &statement : *statements) {

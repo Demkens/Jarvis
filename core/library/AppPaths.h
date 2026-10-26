@@ -9,6 +9,7 @@
 //   <envsRoot>/config.json
 //   <envsRoot>/<库名>/library.db
 //   <envsRoot>/<库名>/cover/
+//   <envsRoot>/<库名>/note/      （M8a：短笔记 Markdown 正文）
 class AppPaths
 {
 public:
@@ -29,6 +30,8 @@ public:
     QString libraryDir(const QString &name) const;
     QString databasePath(const QString &name) const;
     QString coverDir(const QString &name) const;
+    // 笔记正文目录：<envsRoot>/<库名>/note（首次保存笔记时由 NoteService 按需创建）
+    QString noteDir(const QString &name) const;
 
 private:
     QString m_envsRoot;

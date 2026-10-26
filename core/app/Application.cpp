@@ -9,6 +9,7 @@
 #include "import/ImportService.h"
 #include "library/AppPaths.h"
 #include "library/LibraryService.h"
+#include "note/NoteService.h"
 #include "package/PackageService.h"
 #include "settings/SettingsService.h"
 #include "stats/StatsService.h"
@@ -39,6 +40,8 @@ bool Application::initialize(const QString &libraryOverride)
     // 依赖序：库服务（持有 DbAccess）→ 创作者 / 标签 → 存储 → 包服务
     m_creators = std::make_unique<CreatorService>(&m_library->dbAccess());
     m_tags = std::make_unique<TagService>(&m_library->dbAccess());
+    // M8a 短笔记：依赖当前库（元数据）与 AppPaths（note 目录）
+    m_notes = std::make_unique<NoteService>(m_library.get(), m_paths.get(), this);
     m_storage = std::make_unique<StorageService>(m_paths.get(), m_library.get(),
                                                  m_creators.get(), m_eventBus.get());
     m_packages = std::make_unique<PackageService>(m_paths.get(), m_library.get(),
@@ -80,4 +83,5 @@ void Application::bindToQml(QQmlApplicationEngine &engine)
     engine.rootContext()->setContextProperty(QStringLiteral("importService"), m_import.get());
     engine.rootContext()->setContextProperty(QStringLiteral("dedupService"), m_dedup.get());
     engine.rootContext()->setContextProperty(QStringLiteral("statsService"), m_stats.get());
+    engine.rootContext()->setContextProperty(QStringLiteral("noteService"), m_notes.get());
 }

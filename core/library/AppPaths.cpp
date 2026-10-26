@@ -51,3 +51,8 @@ QString AppPaths::coverDir(const QString &name) const
 {
     return libraryDir(name) + QStringLiteral("/cover");
 }
+
+QString AppPaths::noteDir(const QString &name) const
+{
+    return libraryDir(name) + QStringLiteral("/note");
+}

@@ -36,6 +36,7 @@ set (CORE_HEADERS
     core/library/DbAccess.h
     core/library/LibraryConfig.h
     core/library/LibraryService.h
+    core/note/NoteService.h
     core/package/PackageService.h
     core/schema/SchemaManager.h
     core/settings/SettingsService.h
@@ -66,6 +67,7 @@ add_library(jarvis_core STATIC
     core/library/DbAccess.cpp
     core/schema/SchemaManager.cpp
     core/library/LibraryService.cpp
+    core/note/NoteService.cpp
     core/creator/CreatorService.cpp
     core/storage/StorageService.cpp
     core/tag/TagService.cpp

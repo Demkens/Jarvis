@@ -43,7 +43,7 @@ public:
     // 重命名库（当前打开的库会被拒绝）：重命名 envs/<old> 目录（db 文件名统一为
     // library.db，随目录整体移动），并保序更新 config。返回 {ok, message}。
     Q_INVOKABLE QVariantMap renameLibrary(const QString &oldName, const QString &newName);
-    // 导出内嵌数据集到 destDir/<name>/（db + cover + library.json 清单）。
+    // 导出内嵌数据集到 destDir/<name>/（db + cover + note + library.json 清单）。
     Q_INVOKABLE QVariantMap exportLibrary(const QString &name, const QString &destDir);
     // 导入之前导出的库目录（含 library.json）：拷入 envs 并登记，不改当前库。
     Q_INVOKABLE QVariantMap importLibrary(const QString &sourceDir);

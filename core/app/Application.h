@@ -16,6 +16,7 @@ class EventBus;
 class ImportService;
 class PackageService;
 class LibraryService;
+class NoteService;
 class SettingsService;
 class StatsService;
 class StorageService;
@@ -47,6 +48,8 @@ private:
     std::unique_ptr<DedupService> m_dedup;
     std::unique_ptr<ImportService> m_import;
     std::unique_ptr<TagService> m_tags;
+    // M8a 短笔记：元数据在库内，正文在 envs/<库名>/note/*.md
+    std::unique_ptr<NoteService> m_notes;
     std::unique_ptr<SettingsService> m_settings;
     std::unique_ptr<StatsService> m_stats;
     std::unique_ptr<TypeEngine> m_typeEngine;

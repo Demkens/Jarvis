@@ -690,7 +690,15 @@ QVariantMap LibraryService::exportLibrary(const QString &name, const QString &de
         return failResult(QStringLiteral("封面目录复制失败：%1").arg(QDir::toNativeSeparators(srcCover)));
     }
 
-    // 3. 写清单（导入恢复 name/linkAddress/support 等登记信息）
+    // 3. 复制 note/ 目录（M8a 笔记 Markdown 正文；旧库可能尚无笔记目录，缺失则跳过）
+    const QString srcNotes = m_paths->noteDir(trimmed);
+    if (QFileInfo::exists(srcNotes)
+        && !copyDirectoryRecursively(srcNotes, targetDir + QStringLiteral("/note"))) {
+        rollback();
+        return failResult(QStringLiteral("笔记目录复制失败：%1").arg(QDir::toNativeSeparators(srcNotes)));
+    }
+
+    // 4. 写清单（导入恢复 name/linkAddress/support 等登记信息）
     const LibraryEntry entry = m_config.entry(trimmed);
     QJsonObject manifest;
     manifest.insert(QStringLiteral("format"), QStringLiteral("jarvis-library"));
@@ -776,7 +784,7 @@ QVariantMap LibraryService::importLibrary(const QString &sourceDir)
 
     auto rollback = [&] { QDir(targetDir).removeRecursively(); };
 
-    // 2. 复制除清单外的全部条目（db + cover），失败整体回滚
+    // 2. 复制除清单外的全部条目（db + cover + note），失败整体回滚
     const QDir src2(src);
     for (const QFileInfo &info :
          src2.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
