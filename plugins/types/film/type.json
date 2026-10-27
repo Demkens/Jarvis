@@ -1,0 +1,10 @@
+{
+    "form": "film",
+    "displayName": "电影",
+    "version": 1,
+    "coreMinVersion": "0.1.0",
+    "packageLayout": { "kind": "singleMedia", "naming": "original" },
+    "media": ["video"],
+    "browseOrder": "single",
+    "export": { "kind": "folder", "keepNames": true }
+}
