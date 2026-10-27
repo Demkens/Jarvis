@@ -3,6 +3,7 @@
 // 对外信号：tagManagerRequested() —— 选择了「标签管理…」；
 //           tagExportRequested() —— 选择了「标签导出…」；
 //           tagImportRequested() —— 选择了「标签导入…」；
+//           creatorManagerRequested() —— 选择了「创作者管理…」；
 //           imageDedupRequested() —— 选择了「图片查重…」。
 import QtQuick
 import QtQuick.Controls
@@ -21,6 +22,8 @@ Item {
     signal tagExportRequested()
     // 信号: 从标签文件导入并合并进现有标签体系
     signal tagImportRequested()
+    // 信号: 打开创作者管理弹窗（M11a）
+    signal creatorManagerRequested()
     // 信号: 打开图片查重窗口
     signal imageDedupRequested()
 
@@ -77,6 +80,15 @@ Item {
                 text: "标签导入…"
                 enabled: libraryService.currentName !== ""
                 onTriggered: toolsMenu.tagImportRequested()
+            }
+
+            MenuSeparator { }
+
+            MenuItem {
+                text: "创作者管理…"
+                // 创作者全库共享，须先打开库
+                enabled: libraryService.currentName !== ""
+                onTriggered: toolsMenu.creatorManagerRequested()
             }
         }
     }

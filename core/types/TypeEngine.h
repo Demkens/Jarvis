@@ -73,6 +73,29 @@ public:
     // 返回 {ok, message?}；成功后广播 PackageUpdated。
     Q_INVOKABLE QVariantMap writeCreators(qint64 fileId, const QString &names);
 
+    // ---- M11a 创作者管理门面（统一返回 {ok, message?, ...}）----
+    // 函数: 列出创作者（含别名与关联包数）
+    // 输入: keyword —— 同时匹配正式名与别名的子串（空=全部）
+    // 输出: {ok, total, items:[{id, name, packageCount, aliases[], system}]}；
+    //       system=true 表示系统保留创作者「佚名」（不可重命名、不接纳别名）。
+    Q_INVOKABLE QVariantMap listCreators(const QString &keyword) const;
+
+    // 函数: 重命名创作者的正式名
+    // 输入: creatorId、name（新正式名）
+    // 输出: {ok, message?}；成功后会通知资源列表重查（创作者名展示随之更新）。
+    Q_INVOKABLE QVariantMap renameCreator(qint64 creatorId, const QString &name);
+
+    // 函数: 为创作者登记别名
+    // 输入: creatorId、alias
+    // 输出: {ok, message?}；同一别名已归属其他创作者时拒绝（全库别名唯一），
+    //       已归属本创作者时按幂等成功处理。
+    Q_INVOKABLE QVariantMap addCreatorAlias(qint64 creatorId, const QString &alias);
+
+    // 函数: 移除创作者的一条别名
+    // 输入: creatorId、alias
+    // 输出: {ok, message?}；别名不存在也视为成功。
+    Q_INVOKABLE QVariantMap removeCreatorAlias(qint64 creatorId, const QString &alias);
+
     // ---- M4 资源页查询/操作（QML 门面，统一返回 {ok, message?, ...}）----
     // 带条件分页查询：filters 见 PackageService::QueryFilters（键 form/keyword/scope/
     // creationFrom/creationTo/createdFrom/createdTo，缺键即该维度不限；日期键格式 YYYY-MM-DD）；

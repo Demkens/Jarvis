@@ -22,6 +22,8 @@ Item {
     signal tagExportRequested()
     // 信号: 从标签文件导入并合并
     signal tagImportRequested()
+    // 信号: 打开创作者管理弹窗（M11a）
+    signal creatorManagerRequested()
     // 信号: 打开图片查重窗口
     signal imageDedupRequested()
 
@@ -109,6 +111,7 @@ Item {
                 onTagManagerRequested: topBar.tagManagerRequested()
                 onTagExportRequested: topBar.tagExportRequested()
                 onTagImportRequested: topBar.tagImportRequested()
+                onCreatorManagerRequested: topBar.creatorManagerRequested()
                 onImageDedupRequested: topBar.imageDedupRequested()
             }
 

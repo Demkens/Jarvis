@@ -478,6 +478,105 @@ QVariantMap TypeEngine::writeCreators(qint64 fileId, const QString &names)
     return {{QStringLiteral("ok"), true}};
 }
 
+QVariantMap TypeEngine::listCreators(const QString &keyword) const
+{
+    if (!m_library->isOpen())
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"), QStringLiteral("当前没有打开的库")}};
+
+    AppError error;
+    const QList<CreatorSummary> list = m_creators->listCreators(keyword, &error);
+    if (!error.ok())
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    QVariantList items;
+    items.reserve(list.size());
+    for (const CreatorSummary &creator : list) {
+        QVariantList aliases;
+        aliases.reserve(creator.aliases.size());
+        for (const QString &alias : creator.aliases)
+            aliases.append(alias);
+
+        QVariantMap item;
+        item.insert(QStringLiteral("id"), creator.id);
+        item.insert(QStringLiteral("name"), creator.name);
+        item.insert(QStringLiteral("packageCount"), creator.packageCount);
+        item.insert(QStringLiteral("aliases"), aliases);
+        item.insert(QStringLiteral("system"), creator.name == CreatorService::anonymousName());
+        items.append(item);
+    }
+
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("total"), items.size()},
+            {QStringLiteral("items"), items}};
+}
+
+QVariantMap TypeEngine::renameCreator(qint64 creatorId, const QString &name)
+{
+    if (!m_library->isOpen())
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"), QStringLiteral("当前没有打开的库")}};
+
+    AppError error;
+    if (!m_creators->renameCreator(creatorId, name, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    // 资源页展示的 creatorName 随之变化 → 通知重查
+    emit packagesChanged();
+    return {{QStringLiteral("ok"), true}};
+}
+
+QVariantMap TypeEngine::addCreatorAlias(qint64 creatorId, const QString &alias)
+{
+    if (!m_library->isOpen())
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"), QStringLiteral("当前没有打开的库")}};
+
+    const QString trimmed = alias.trimmed();
+    if (trimmed.isEmpty())
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"), QStringLiteral("别名不能为空")}};
+
+    // 别名全库唯一：先查占用者，给出可读的冲突说明（数据库本身不限制跨创作者重复，
+    // 但管理界面主动收紧，避免导入时产生歧义）。
+    AppError error;
+    const QList<qint64> owners = m_creators->findByAlias(trimmed, &error);
+    if (!error.ok())
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+
+    QStringList foreignOwners;
+    for (qint64 ownerId : owners) {
+        if (ownerId == creatorId)
+            continue;
+        const QString ownerName = m_creators->displayName(ownerId, &error);
+        if (!error.ok())
+            return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+        foreignOwners.append(ownerName);
+    }
+    if (!foreignOwners.isEmpty()) {
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"),
+                 QStringLiteral("别名「%1」已被「%2」使用，别名在全库内必须唯一")
+                     .arg(trimmed, foreignOwners.join(QStringLiteral("、")))}};
+    }
+
+    if (!m_creators->addAlias(creatorId, trimmed, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    return {{QStringLiteral("ok"), true}};
+}
+
+QVariantMap TypeEngine::removeCreatorAlias(qint64 creatorId, const QString &alias)
+{
+    if (!m_library->isOpen())
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("message"), QStringLiteral("当前没有打开的库")}};
+
+    AppError error;
+    if (!m_creators->removeAlias(creatorId, alias, &error))
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), error.message}};
+    return {{QStringLiteral("ok"), true}};
+}
+
 void TypeEngine::refresh()
 {
     m_enabledTypes = loadEnabledTypes();

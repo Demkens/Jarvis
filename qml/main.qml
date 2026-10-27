@@ -57,6 +57,8 @@ Item {
                 onTagExportRequested: dialogs.exportTags()
                 // 槽函数: 从标签文件导入并合并
                 onTagImportRequested: dialogs.importTags()
+                // 槽函数: 打开创作者管理弹窗（M11a）
+                onCreatorManagerRequested: dialogs.openCreatorManager()
                 // 槽函数: 打开图片查重窗口
                 onImageDedupRequested: dialogs.openDedup()
             }

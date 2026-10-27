@@ -125,6 +125,7 @@ qt_add_qml_module(jarvis
         qml/dialogs/FilterDialog.qml
         qml/dialogs/EditPackageDialog.qml
         qml/dialogs/TagManagerDialog.qml
+        qml/dialogs/CreatorManagerDialog.qml
         qml/dialogs/TagPickDialog.qml
         qml/windows/ViewerWindow.qml
         qml/windows/LibraryManagerWindow.qml
