@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 不需要 Widgets / QApplication（旧的 Qt Charts 因 2D 走 Graphics View 才必须带上二者，
 # 且已自 Qt 6.10 起废弃），故此处不再请求 Charts 与 Widgets 组件。
 # Core5Compat：小说源 txt 的 GB18030 解码依赖 QTextCodec（Qt6 未提供等价内建 API）
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Sql Graphs Core5Compat)
+# Multimedia：视频类型（film/modelfilm）的播放依赖 Qt Multimedia（QML MediaPlayer/VideoOutput）
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Sql Graphs Core5Compat Multimedia)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -138,6 +139,10 @@ target_link_libraries(jarvis PRIVATE jarvis_core)
 # 纯 QML 渲染路径，不引入 Widgets，故 main 仍用 QGuiApplication。
 target_link_libraries(jarvis PRIVATE Qt6::Graphs)
 
+# Qt Multimedia：视频类型的播放内核（plugins/types/*.qml 在运行期动态 import QtMultimedia，
+# 不在 QML_FILES 扫描范围内，故显式链接以保证 windeployqt 收拢 DLL 与后端插件）
+target_link_libraries(jarvis PRIVATE Qt6::Multimedia)
+
 # 图标等通用图片资源：作为源加入 jarvis，由 AUTORCC 编译（按 qrc 内部 prefix/alias）
 target_sources(jarvis PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/images.qrc")
 
@@ -156,6 +161,19 @@ add_custom_command(TARGET jarvis POST_BUILD
 # 类型包随之落于 <目标目录>/plugins/types/<form>/，envs/ 在首次运行时于 exe 旁自建。
 install(TARGETS jarvis RUNTIME DESTINATION .)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/plugins" DESTINATION plugins)
+
+# QtMultimedia QML 模块：类型包 QML 在运行期才 import，部署脚本的 qmlimportscanner
+# 扫不到该依赖，故显式随产物复制（缺失时跳过，交由 windeployqt 兜底）
+# 注意：Qt6 的 QT6_INSTALL_QML / QT6_INSTALL_PLUGINS 是相对安装前缀的目录名，
+#       必须与 QT6_INSTALL_PREFIX 拼接后才能用于存在性判断
+if(EXISTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_QML}/QtMultimedia")
+    install(DIRECTORY "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_QML}/QtMultimedia" DESTINATION qml)
+endif()
+# FFmpeg 多媒体后端插件（Windows 上 Qt 6 默认后端），供播放器解码
+if(EXISTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/multimedia")
+    install(DIRECTORY "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/multimedia"
+            DESTINATION plugins)
+endif()
 
 qt_generate_deploy_app_script(
     TARGET jarvis

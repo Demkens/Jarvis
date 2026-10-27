@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
@@ -54,6 +55,16 @@ public:
     // 类型包 QML 文件的 file:// URL（供 Loader 加载）；包缺失返回空 URL
     Q_INVOKABLE QUrl wizardUrl(const QString &form) const;
     Q_INVOKABLE QUrl viewerUrl(const QString &form) const;
+
+    // 函数: 类型声明的媒体后缀（导入向导据此构造文件过滤器、校验拖入文件）
+    // 输入: form —— 类型标识
+    // 输出: 小写、不含点的扩展名列表（image/video 合并）；类型包缺失或未声明媒体时为空
+    Q_INVOKABLE QStringList mediaSuffixes(const QString &form) const;
+
+    // 函数: 判断文件是否被类型声明接受
+    // 输入: form —— 类型标识；path —— 本地文件路径（也接受纯文件名）
+    // 输出: true 表示该文件的媒体类别（image/video）在类型的 media 声明内
+    Q_INVOKABLE bool acceptsFile(const QString &form, const QString &path) const;
 
     // 制造查看器上下文（每次打开一个；QML 持有期间有效）。
     // 返回 QObject*（运行时实为 PackageViewContext*）而非自定义类型指针——

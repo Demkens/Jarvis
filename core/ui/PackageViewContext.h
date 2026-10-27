@@ -11,7 +11,8 @@ class PackageService;
 // 查看器上下文（开发文档 7.3）：TypeEngine 加载 viewer.qml 时注入的唯一对象。
 // 类型包 QML 经它访问包数据，不直接开数据库、不直接碰文件系统根：
 //   packageId / title / typeForm
-//   files：包内内容文件清单（相对路径、file:// URL、大小），递归列出子目录、按相对路径排序；
+//   files：包内内容文件清单（相对路径、file:// URL、大小、媒体类别 media=image/video），
+//          递归列出子目录、按相对路径排序；
 //          config.txt 等包清单不进入清单，需要时用 readText() 读取
 //   readText()：读取包内任意文本文件（小说正文、包清单）
 //   positionJson / savePosition：浏览记忆（{"index": n} / {"chapter": n, "scroll": y} 等，

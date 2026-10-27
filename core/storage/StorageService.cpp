@@ -1,11 +1,15 @@
 #include "StorageService.h"
 
 #include <QDate>
+#include <QColor>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
+#include <QPainter>
+#include <QPointF>
+#include <QPolygonF>
 #include <QRegularExpression>
 #include <QDebug>
 #include <cmath>
@@ -293,8 +297,16 @@ qint64 StorageService::importPackage(const ImportPlan &plan, AppError *error)
     }
 
     // ---- 4. 封面（可选：核心统一生成，清晰度固定为对角线 kCoverDiagonal）----
-    if (!coverSource.isEmpty() && !generateCover(coverSource, targetCover, error))
-        return abortImport(QStringLiteral("封面生成失败"));
+    if (!coverSource.isEmpty()) {
+        if (!generateCover(coverSource, targetCover, error))
+            return abortImport(QStringLiteral("封面生成失败"));
+    } else if (plan.placeholderCover) {
+        // 纯视频包没有可用图片：生成占位封面。失败不阻断导入（资源页无封面也能用）
+        AppError placeholderError;
+        if (!generatePlaceholderCover(targetCover, &placeholderError))
+            qWarning().noquote() << "[storage] 占位封面生成失败，导入继续："
+                                 << placeholderError.message;
+    }
 
     // ---- 5. 写创作者关联（多对多；空输入已归为「佚名」，故至少一条）----
     for (int index = 0; index < creatorIds.size(); ++index) {
@@ -459,6 +471,44 @@ int StorageService::exportPackage(qint64 id, const QString &destDir, AppError *e
 
     qInfo().noquote() << "[storage] 已导出包: id =" << id << "→" << destDir << "文件数 =" << copied;
     return copied;
+}
+
+bool StorageService::generatePlaceholderCover(const QString &targetPath, AppError *error)
+{
+    // 600×600：与视频常见 16:9 封面的裁剪无关，只作资源页卡片占位，方形最稳妥
+    constexpr int kSize = 600;
+    QImage image(kSize, kSize, QImage::Format_RGB32);
+    image.fill(QColor(0x3a, 0x3f, 0x4a)); // 深灰底（与亮色卡片对比清晰）
+
+    {
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0xf2, 0xf4, 0xf8));
+
+        // 播放三角：居中略偏右（视觉重心补偿），高度约为画布的 1/3
+        const qreal halfHeight = kSize / 6.0;
+        QPolygonF triangle;
+        triangle << QPointF(kSize / 2.0 - halfHeight, kSize / 2.0 - halfHeight)
+                 << QPointF(kSize / 2.0 - halfHeight, kSize / 2.0 + halfHeight)
+                 << QPointF(kSize / 2.0 + halfHeight * 1.4, kSize / 2.0);
+        painter.drawPolygon(triangle);
+        painter.end();
+    }
+
+    if (!QDir().mkpath(QFileInfo(targetPath).absolutePath())) {
+        if (error != nullptr)
+            *error = AppError::fail(AppError::Io,
+                                    QStringLiteral("封面目录创建失败：%1").arg(targetPath));
+        return false;
+    }
+    if (!image.save(targetPath, "JPEG", 85)) {
+        if (error != nullptr)
+            *error = AppError::fail(AppError::Io,
+                                    QStringLiteral("占位封面写入失败：%1").arg(targetPath));
+        return false;
+    }
+    return true;
 }
 
 bool StorageService::generateCover(const QString &sourcePath, const QString &targetPath,

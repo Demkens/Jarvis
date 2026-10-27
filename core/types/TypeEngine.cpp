@@ -6,6 +6,7 @@
 #include <QUrl>
 
 #include "creator/CreatorService.h"
+#include "common/MediaTypes.h"
 #include "events/EventBus.h"
 #include "library/AppPaths.h"
 #include "library/DbAccess.h"
@@ -88,11 +89,17 @@ QVariantList TypeEngine::loadEnabledTypes() const
         if (package == nullptr)
             continue; // 类型包文件缺失：数据只读隐藏（开发文档 4.4）
 
+        // media 供 QML 判断该类型管什么内容（如查看器筛选视频文件）
+        QVariantList media;
+        for (const QString &kind : package->media)
+            media.append(kind);
+
         list.append(QVariantMap{
             {QStringLiteral("form"), package->form},
             {QStringLiteral("displayName"), package->displayName},
             {QStringLiteral("layoutKind"), package->packageLayoutKind},
             {QStringLiteral("browseOrder"), package->browseOrder},
+            {QStringLiteral("media"), media},
         });
     }
     return list;
@@ -403,6 +410,30 @@ QUrl TypeEngine::viewerUrl(const QString &form) const
 {
     const TypePackage *package = enabledPackage(form);
     return package == nullptr ? QUrl() : QUrl::fromLocalFile(package->viewerPath);
+}
+
+QStringList TypeEngine::mediaSuffixes(const QString &form) const
+{
+    // 类型包由 TypePackageManager 持有，无需查库：调用方（向导）本就在已启用类型页内
+    const TypePackage *package = m_typePackages->package(form);
+    if (package == nullptr)
+        return {};
+
+    QStringList suffixes;
+    if (package->media.contains(QStringLiteral("image")))
+        suffixes << MediaTypes::imageSuffixes();
+    if (package->media.contains(QStringLiteral("video")))
+        suffixes << MediaTypes::videoSuffixes();
+    return suffixes;
+}
+
+bool TypeEngine::acceptsFile(const QString &form, const QString &path) const
+{
+    const TypePackage *package = m_typePackages->package(form);
+    if (package == nullptr)
+        return false;
+    const QString kind = MediaTypes::mediaKind(path);
+    return !kind.isEmpty() && package->media.contains(kind);
 }
 
 QObject *TypeEngine::createPackageView(qint64 fileId)

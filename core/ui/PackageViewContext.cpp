@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QUrl>
 
+#include "common/MediaTypes.h"
 #include "library/AppPaths.h"
 #include "library/LibraryService.h"
 #include "package/PackageService.h"
@@ -69,6 +70,8 @@ void PackageViewContext::load()
             {QStringLiteral("relativePath"), relative},
             {QStringLiteral("size"), info.size()},
             {QStringLiteral("url"), QUrl::fromLocalFile(absolute)},
+            // 媒体类别供查看器按类型挑文件（"image"/"video"；未知扩展名为空串）
+            {QStringLiteral("media"), MediaTypes::mediaKind(absolute)},
         });
     }
 
@@ -147,6 +150,11 @@ void PackageViewContext::setPositionJson(const QString &json)
 
 bool PackageViewContext::savePosition()
 {
+    // 空位置不写库：browse_state.position 为 NOT NULL，空串会被驱动绑定成 NULL 而报错；
+    // 且"本页尚未产生任何位置"本身无需记忆（如查看器组件加载失败、类型页未实现记忆）
+    if (m_position.trimmed().isEmpty())
+        return true;
+
     AppError error;
     if (!m_packages->writeBrowseState(m_packageId, m_position, &error)) {
         qWarning().noquote() << "[viewer] 浏览位置写回失败:" << error.message;

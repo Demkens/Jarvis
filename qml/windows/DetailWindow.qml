@@ -376,10 +376,19 @@ Window {
                             Layout.preferredHeight: 84
                             radius: 4
                             clip: true
+                            // 图片用缩略图；视频无法当图片解码，显示播放符号占位
                             Image {
                                 anchors.fill: parent
                                 fillMode: Image.PreserveAspectFit
-                                source: modelData.url || ""
+                                visible: modelData.media !== "video"
+                                source: visible ? (modelData.url || "") : ""
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                visible: modelData.media === "video"
+                                text: "▶"
+                                font.pixelSize: 26
+                                color: "#7a828f"
                             }
                         }
                         Text {

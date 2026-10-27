@@ -9,15 +9,20 @@
 
 class DedupService;
 class LibraryService;
+class TypePackage;
 class TypePackageManager;
 
 // 导入/导出 QML 门面
 // 向导与预处理两通道都归一为 ImportPlan 映射数组，由本服务批量执行；
 // 按类型包声明的 packageLayout.kind 分派执行策略：
-//  - imageSequence（draw）：所选文件按序号命名落位，导入前做图片完全重复预检；
+//  - imageSequence（draw/comic）：所选图片按序号命名落位，导入前做图片完全重复预检；
 //  - wholeBookText（novel）：整本 txt 先经 BookSplitter 切分为章节文件与 config.txt，
-//    再按条目落位；文本不产生图片指纹，故不做查重预检。
-// 预处理目录扫描同样按 kind 分派（draw 扫子文件夹与散图，novel 扫每个 .txt）。
+//    再按条目落位；文本不产生图片指纹，故不做查重预检；
+//  - singleMedia（film/modelfilm）：每包恰好 1 个媒体文件（保留原文件名），
+//    扩展名须落在类型声明的 media 内；视频不参与图片查重，无图片时生成占位封面；
+//  - mediaSequence：文件夹 → 包（包内媒体按文件名排序），根目录散文件各自成包。
+// 预处理目录扫描同样按 kind 分派（draw 扫子文件夹与散图，novel 扫每个 .txt，
+// singleMedia 递归扫每个视频，mediaSequence 扫一层文件夹与散文件）。
 // 纪律继承 StorageService：核心独占文件系统写操作；失败条目单独报告不阻断其余。
 class ImportService : public QObject
 {
@@ -38,7 +43,7 @@ public:
 
     // 预处理扫描。返回：
     // {ok, plans: [ImportPlan 映射...], warnings: [...]}
-    // 计划字段随布局类型不同：图片类型为 files（源图片清单），
+    // 计划字段随布局类型不同：图片/视频类型为 files（源媒体清单），
     // 文本类型为 sourcePath（整本 txt）；确认页可批量补填标题/创作者/日期后提交。
     Q_INVOKABLE QVariantMap scanPreprocess(const QString &form, const QString &rootDir);
 
@@ -63,12 +68,21 @@ public:
     Q_INVOKABLE bool isOnline() const;
 
 private:
-    // 计划映射 → ImportPlan（entries 规整：显式条目优先，否则把 files 简写为序号命名）
-    static ImportPlan planFromMap(const QString &form, const QVariantMap &map);
-    // 图片类计划：完全重复预检 → 复制导入 → 写指纹
-    QVariantMap executeImagePlan(const QString &form, const QVariantMap &map, int index);
+    // 计划映射 → ImportPlan（entries 规整：显式条目优先，否则把 files 简写为条目；
+    // 命名规则随布局不同：singleMedia 保留原文件名，其余按序号命名）
+    static ImportPlan planFromMap(const QString &form, const TypePackage *package,
+                                  const QVariantMap &map);
+    // 媒体类计划（imageSequence / singleMedia / mediaSequence）：
+    // 校验媒体类别与包内文件数 → 图片完全重复预检 → 复制导入 → 写指纹
+    QVariantMap executeMediaPlan(const QString &form, const QVariantMap &map, int index);
     // 文本类计划：切分到临时目录 → 生成条目 → 复制导入 → 清理临时目录
     QVariantMap executeBookPlan(const QString &form, const QVariantMap &map, int index);
+    // 图片序列预处理扫描（每个子文件夹/根目录散图各一个计划）
+    QVariantMap scanImagePreprocess(const QString &rootDir);
+    // 单媒体预处理扫描（递归扫描根目录，每个受支持的媒体文件 = 一个包）
+    QVariantMap scanSingleMediaPreprocess(const TypePackage *package, const QString &rootDir);
+    // 多媒体序列预处理扫描（根目录一层文件夹 = 包，散文件各自成包）
+    QVariantMap scanMediaSequencePreprocess(const TypePackage *package, const QString &rootDir);
     // 小说预处理扫描（每个 .txt 一个计划）
     QVariantMap scanBookPreprocess(const QString &form, const QString &rootDir);
     // 导入成功后写入图片内容指纹；prechecked 为预检返回的 files 列表，用于复用已算哈希。

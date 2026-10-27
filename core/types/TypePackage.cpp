@@ -1,6 +1,7 @@
 #include "TypePackage.h"
 
 #include <QDebug>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QRegularExpression>
 
@@ -9,6 +10,56 @@ namespace {
 // form 会成为 SQL 标识符与目录名，限定小写字母开头的安全命名
 const QRegularExpression kIdentifierPattern(QStringLiteral("^[a-z][a-z0-9_]{0,31}$"));
 const QRegularExpression kVersionPattern(QStringLiteral("^\\d+\\.\\d+\\.\\d+$"));
+
+// 解析顶层 media 声明：
+// 输入 mediaValue 为 type.json 的 media 字段，layoutKind 为包内布局；
+// 输出 media（按声明顺序去重）或 error。
+// 规则：singleMedia / mediaSequence 必须显式声明；imageSequence 不得声明 video；
+//       wholeBookText 缺省为空、声明了则按声明采用（核心不消费文本媒体）。
+bool parseMedia(const QJsonValue &mediaValue, const QString &layoutKind, QStringList &media,
+                QString &error)
+{
+    const bool mediaRequired = layoutKind == QStringLiteral("singleMedia")
+        || layoutKind == QStringLiteral("mediaSequence");
+
+    if (mediaValue.isUndefined() || mediaValue.isNull()) {
+        if (mediaRequired) {
+            error = QStringLiteral("packageLayout %1 必须显式声明 media").arg(layoutKind);
+            return false;
+        }
+        if (layoutKind == QStringLiteral("imageSequence"))
+            media = {QStringLiteral("image")}; // 历史类型包未声明 media，按图片序列推导
+        return true;
+    }
+
+    if (!mediaValue.isArray()) {
+        error = QStringLiteral("media 须为字符串数组（如 [\"video\"]）");
+        return false;
+    }
+
+    for (const QJsonValue &value : mediaValue.toArray()) {
+        const QString kind = value.toString().trimmed().toLower();
+        if (kind != QStringLiteral("image") && kind != QStringLiteral("video")) {
+            error = QStringLiteral("media 仅支持 \"image\" 或 \"video\"，非法值：") + kind;
+            return false;
+        }
+        if (media.contains(kind)) {
+            error = QStringLiteral("media 重复声明：") + kind;
+            return false;
+        }
+        media.append(kind);
+    }
+
+    if (media.isEmpty()) {
+        error = QStringLiteral("media 为空数组；无需媒体时请省略该字段");
+        return false;
+    }
+    if (layoutKind == QStringLiteral("imageSequence") && media.contains(QStringLiteral("video"))) {
+        error = QStringLiteral("imageSequence 布局只能处理图片，不能声明 video");
+        return false;
+    }
+    return true;
+}
 
 bool checkIdentifier(const QString &value, const QString &what, QString &error)
 {
@@ -61,12 +112,18 @@ bool TypePackage::fromJson(const QJsonObject &json, TypePackage &out, QString &e
         return false;
     }
 
+    // —— 媒体声明 ——
+    QStringList media;
+    if (!parseMedia(json.value(QStringLiteral("media")), layoutKind, media, error))
+        return false;
+
     // —— 校验通过，落盘 ——
     out.form = form;
     out.displayName = displayName;
     out.version = static_cast<int>(version);
     out.coreMinVersion = coreMinVersion;
     out.packageLayoutKind = layoutKind;
+    out.media = media;
     out.packageLayout = layoutValue.toObject().toVariantMap();
     out.browseOrder = browseOrder;
 

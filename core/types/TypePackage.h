@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QVariantMap>
 
 class QJsonObject;
@@ -16,7 +17,13 @@ public:
     QString displayName;           // 显示名（如 画作）
     int version = 0;               // 类型包契约版本
     QString coreMinVersion;        // 依赖的最低核心版本
-    QString packageLayoutKind;     // 包内文件规范（draw = imageSequence，novel = wholeBookText）
+    // 包内文件规范：imageSequence（draw/comic）、wholeBookText（novel）、
+    // singleMedia（每包恰好 1 个媒体文件，film/modelfilm）、mediaSequence（文件夹 = 包）
+    QString packageLayoutKind;
+    // 类型接受的内容媒体类别：["image"] / ["video"] / ["image","video"]。
+    // 缺省推导：imageSequence → ["image"]，wholeBookText → 空；
+    // singleMedia / mediaSequence 必须在 type.json 显式声明。
+    QStringList media;
     // packageLayout 的完整声明（kind/naming/chapterRules 等）。核心按 kind 分派导入与扫描行为，
     // 其余字段（如小说切分规则表）由声明方定义，核心只消费不解释其含义。
     QVariantMap packageLayout;

@@ -62,6 +62,14 @@ QVariantMap planMeta(const QVariantMap &meta, const QString &fallbackTitle,
 // 章节预览分析的单次预算：批量扫描时避免把几百本大书全部读一遍造成长时间卡顿
 constexpr qint64 kPreviewBudgetBytes = 64LL * 1024 * 1024;
 
+// 判断文件的媒体类别是否被类型声明接受（扫描与导入校验共用）
+// 输入 package 为类型包，path 为文件路径；输出 true 表示 image/video 在 media 声明内
+bool packageAcceptsPath(const TypePackage &package, const QString &path)
+{
+    const QString kind = MediaTypes::mediaKind(path);
+    return !kind.isEmpty() && package.media.contains(kind);
+}
+
 } // namespace
 
 ImportService::ImportService(LibraryService *library, StorageService *storage,
@@ -75,7 +83,8 @@ ImportService::ImportService(LibraryService *library, StorageService *storage,
 {
 }
 
-ImportPlan ImportService::planFromMap(const QString &form, const QVariantMap &map)
+ImportPlan ImportService::planFromMap(const QString &form, const TypePackage *package,
+                                      const QVariantMap &map)
 {
     ImportPlan plan;
     plan.form = form;
@@ -84,6 +93,11 @@ ImportPlan ImportService::planFromMap(const QString &form, const QVariantMap &ma
     plan.creationDate = map.value(QStringLiteral("creationDate")).toString();
     plan.score = map.value(QStringLiteral("score"), 0).toInt();
     plan.coverSourcePath = map.value(QStringLiteral("coverSourcePath")).toString();
+
+    // 单媒体包保留原文件名（一个视频一个包，导出/续看都按原名更直观）；
+    // 序列布局仍按零填充序号命名，保证包内顺序稳定
+    const bool keepOriginalName =
+        package != nullptr && package->packageLayoutKind == QStringLiteral("singleMedia");
 
     const QVariantList entries = map.value(QStringLiteral("entries")).toList();
     if (!entries.isEmpty()) {
@@ -96,20 +110,22 @@ ImportPlan ImportService::planFromMap(const QString &form, const QVariantMap &ma
             plan.entries.append(item);
         }
     } else {
-        // 扁平清单简写（imageSequence 布局）：按序号命名，顺序即包内顺序
+        // 扁平清单简写（imageSequence / singleMedia / mediaSequence）
         const QVariantList files = map.value(QStringLiteral("files")).toList();
         for (int index = 0; index < files.size(); ++index) {
             const QFileInfo info(files.at(index).toString());
             const QString suffix = info.suffix();
             ImportEntry item;
             item.sourcePath = info.absoluteFilePath();
-            item.relativePath = StorageService::indexedName(index + 1)
-                + (suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix);
+            item.relativePath = keepOriginalName
+                ? info.fileName()
+                : StorageService::indexedName(index + 1)
+                      + (suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix);
             plan.entries.append(item);
         }
     }
 
-    // 封面缺省取首个图片条目；纯文本包自然为空 → 不生成封面
+    // 封面缺省取首个图片条目；纯文本/纯视频包自然为空
     if (plan.coverSourcePath.isEmpty()) {
         for (const ImportEntry &entry : plan.entries) {
             if (MediaTypes::isImageFile(entry.sourcePath)) {
@@ -118,14 +134,19 @@ ImportPlan ImportService::planFromMap(const QString &form, const QVariantMap &ma
             }
         }
     }
+
+    // 无图片可作封面且类型接受视频 → 由核心生成占位封面（深灰底播放图标）
+    if (plan.coverSourcePath.isEmpty() && package != nullptr
+        && package->media.contains(QStringLiteral("video"))) {
+        plan.placeholderCover = true;
+    }
     return plan;
 }
 
 QVariantMap ImportService::executePlans(const QString &form, const QVariantList &plans)
 {
     const TypePackage *package = m_typePackages->package(form);
-    const bool bookLayout =
-        package != nullptr && package->packageLayoutKind == QStringLiteral("wholeBookText");
+    const QString kind = package != nullptr ? package->packageLayoutKind : QString();
 
     QVariantList results;
     QVariantList importedIds;
@@ -134,8 +155,12 @@ QVariantMap ImportService::executePlans(const QString &form, const QVariantList 
 
     for (int index = 0; index < plans.size(); ++index) {
         const QVariantMap map = plans.at(index).toMap();
-        QVariantMap item = bookLayout ? executeBookPlan(form, map, index)
-                                      : executeImagePlan(form, map, index);
+        QVariantMap item;
+        if (kind == QStringLiteral("wholeBookText"))
+            item = executeBookPlan(form, map, index);
+        else
+            item = executeMediaPlan(form, map, index); // imageSequence / singleMedia / mediaSequence
+
         if (item.value(QStringLiteral("ok")).toBool()) {
             ++success;
             importedIds.append(item.value(QStringLiteral("id")));
@@ -157,12 +182,38 @@ QVariantMap ImportService::executePlans(const QString &form, const QVariantList 
     };
 }
 
-QVariantMap ImportService::executeImagePlan(const QString &form, const QVariantMap &map, int index)
+QVariantMap ImportService::executeMediaPlan(const QString &form, const QVariantMap &map, int index)
 {
-    const ImportPlan plan = planFromMap(form, map);
     QVariantMap item{{QStringLiteral("index"), index}};
 
-    // 写入前完全重复预检：命中即阻断，不复制任何文件
+    const TypePackage *package = m_typePackages->package(form);
+    if (package == nullptr) {
+        item.insert(QStringLiteral("ok"), false);
+        item.insert(QStringLiteral("message"), QStringLiteral("类型包未安装：%1").arg(form));
+        return item;
+    }
+
+    const ImportPlan plan = planFromMap(form, package, map);
+
+    // 媒体类别校验：扩展名必须落在类型声明的 media 内（防止把图片塞进视频类型，反之亦然）
+    for (const ImportEntry &entry : plan.entries) {
+        if (packageAcceptsPath(*package, entry.sourcePath))
+            continue;
+        item.insert(QStringLiteral("ok"), false);
+        item.insert(QStringLiteral("message"),
+                    QStringLiteral("文件类型不受该类型支持：%1")
+                        .arg(QFileInfo(entry.sourcePath).fileName()));
+        return item;
+    }
+
+    // 单媒体包：每包恰好 1 个文件（向导层已拦截多选，此处为核心防御性校验）
+    if (package->packageLayoutKind == QStringLiteral("singleMedia") && plan.entries.size() != 1) {
+        item.insert(QStringLiteral("ok"), false);
+        item.insert(QStringLiteral("message"), QStringLiteral("该类型每包仅允许 1 个文件"));
+        return item;
+    }
+
+    // 写入前完全重复预检：命中即阻断，不复制任何文件（视频/文本不参与，预检内部跳过）
     QVariantMap precheck{{QStringLiteral("ok"), true},
                          {QStringLiteral("hasDuplicates"), false},
                          {QStringLiteral("files"), QVariantList{}}};
@@ -254,7 +305,7 @@ QVariantMap ImportService::executeBookPlan(const QString &form, const QVariantMa
         return reject(writeError);
     }
 
-    ImportPlan plan = planFromMap(form, map);
+    ImportPlan plan = planFromMap(form, package, map);
     plan.entries.clear();
     for (const BookChapter &chapter : analysis.chapters) {
         const QString fileName = QString::number(chapter.index) + QStringLiteral(".txt");
@@ -355,12 +406,26 @@ QVariantMap ImportService::scanPreprocess(const QString &form, const QString &ro
     if (!root.exists())
         return fail(QStringLiteral("预处理根目录不存在：%1").arg(QDir::toNativeSeparators(rootDir)));
 
-    // 文本布局：每个 .txt 一本书，扫描规则与图片完全不同
-    if (package->packageLayoutKind == QStringLiteral("wholeBookText"))
+    // 按类型声明的包内布局分派扫描策略
+    const QString kind = package->packageLayoutKind;
+    if (kind == QStringLiteral("wholeBookText"))
         return scanBookPreprocess(form, rootDir);
-    if (package->packageLayoutKind != QStringLiteral("imageSequence"))
-        return fail(QStringLiteral("类型 %1 的包内布局暂不支持预处理扫描").arg(form));
+    if (kind == QStringLiteral("imageSequence"))
+        return scanImagePreprocess(rootDir);
+    if (kind == QStringLiteral("singleMedia"))
+        return scanSingleMediaPreprocess(package, rootDir);
+    if (kind == QStringLiteral("mediaSequence"))
+        return scanMediaSequencePreprocess(package, rootDir);
+    return fail(QStringLiteral("类型 %1 的包内布局暂不支持预处理扫描").arg(form));
+}
 
+QVariantMap ImportService::scanImagePreprocess(const QString &rootDir)
+{
+    auto fail = [](const QString &message) {
+        return QVariantMap{{QStringLiteral("ok"), false}, {QStringLiteral("message"), message}};
+    };
+
+    const QDir root(rootDir);
     QVariantList plans;
     QStringList warnings;
 
@@ -401,6 +466,109 @@ QVariantMap ImportService::scanPreprocess(const QString &form, const QString &ro
 
     if (plans.isEmpty())
         return fail(QStringLiteral("预处理目录下没有发现可导入的图片：%1")
+                        .arg(QDir::toNativeSeparators(rootDir)));
+
+    return {
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("plans"), plans},
+        {QStringLiteral("warnings"), warnings},
+    };
+}
+
+QVariantMap ImportService::scanSingleMediaPreprocess(const TypePackage *package,
+                                                     const QString &rootDir)
+{
+    auto fail = [](const QString &message) {
+        return QVariantMap{{QStringLiteral("ok"), false}, {QStringLiteral("message"), message}};
+    };
+
+    QVariantList plans;
+    QStringList warnings;
+    QHash<QString, QVariantMap> metaCache;
+
+    // 递归扫描：每个受支持的媒体文件 = 一个包（单视频类型即"一个视频一个包"）；
+    // 标题取文件主名，创作者/日期/封面取该文件所在目录的可选 meta.json
+    QDirIterator it(rootDir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QFileInfo info(it.next());
+        if (!packageAcceptsPath(*package, info.fileName()))
+            continue;
+
+        const auto cached = metaCache.constFind(info.absolutePath());
+        const QVariantMap meta =
+            cached != metaCache.constEnd() ? *cached : readMetaFile(info.absolutePath());
+        if (cached == metaCache.constEnd())
+            metaCache.insert(info.absolutePath(), meta);
+
+        QVariantMap plan = planMeta(meta, info.completeBaseName(), info.absolutePath(), &warnings);
+        // 标题逐包唯一：同一目录可能放多个视频，meta.json 的 title 不应把它们抹成同名，
+        // 故单媒体包一律以文件名主名为标题；meta.json 只贡献创作者/日期/封面
+        plan.insert(QStringLiteral("title"), info.completeBaseName());
+        plan.insert(QStringLiteral("files"), QVariantList{info.absoluteFilePath()});
+        plans.append(plan);
+    }
+
+    if (plans.isEmpty())
+        return fail(QStringLiteral("预处理目录下没有发现可导入的媒体文件：%1")
+                        .arg(QDir::toNativeSeparators(rootDir)));
+
+    std::sort(plans.begin(), plans.end(), [](const QVariant &a, const QVariant &b) {
+        const QVariantList filesA = a.toMap().value(QStringLiteral("files")).toList();
+        const QVariantList filesB = b.toMap().value(QStringLiteral("files")).toList();
+        return filesA.value(0).toString() < filesB.value(0).toString();
+    });
+
+    return {
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("plans"), plans},
+        {QStringLiteral("warnings"), warnings},
+    };
+}
+
+QVariantMap ImportService::scanMediaSequencePreprocess(const TypePackage *package,
+                                                       const QString &rootDir)
+{
+    auto fail = [](const QString &message) {
+        return QVariantMap{{QStringLiteral("ok"), false}, {QStringLiteral("message"), message}};
+    };
+
+    const QDir root(rootDir);
+    QVariantList plans;
+    QStringList warnings;
+
+    // 根目录一层文件夹 = 一个包（包内媒体按文件名排序）；根目录散文件各自成包
+    const QFileInfoList entries =
+        root.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    for (const QFileInfo &entry : entries) {
+        if (entry.isDir()) {
+            const QDir folder(entry.absoluteFilePath());
+            QStringList files;
+            for (const QFileInfo &info : folder.entryInfoList(QDir::Files, QDir::Name)) {
+                if (packageAcceptsPath(*package, info.fileName()))
+                    files.append(info.absoluteFilePath());
+            }
+            if (files.isEmpty()) {
+                warnings.append(QStringLiteral("文件夹无受支持的媒体，已跳过：%1")
+                                    .arg(entry.fileName()));
+                continue;
+            }
+
+            QVariantMap plan = planMeta(readMetaFile(entry.absoluteFilePath()), entry.fileName(),
+                                        entry.absoluteFilePath(), &warnings);
+            plan.insert(QStringLiteral("files"), files);
+            plans.append(plan);
+        } else if (packageAcceptsPath(*package, entry.fileName())) {
+            plans.append(QVariantMap{
+                {QStringLiteral("title"), entry.completeBaseName()},
+                {QStringLiteral("creatorName"), QString()},
+                {QStringLiteral("creationDate"), QString()},
+                {QStringLiteral("files"), QVariantList{entry.absoluteFilePath()}},
+            });
+        }
+    }
+
+    if (plans.isEmpty())
+        return fail(QStringLiteral("预处理目录下没有发现可导入的媒体文件：%1")
                         .arg(QDir::toNativeSeparators(rootDir)));
 
     return {
@@ -517,10 +685,22 @@ QVariantMap ImportService::analyzeBook(const QString &form, const QString &path)
 QString ImportService::preprocessHint(const QString &form) const
 {
     const TypePackage *package = m_typePackages->package(form);
-    if (package != nullptr && package->packageLayoutKind == QStringLiteral("wholeBookText")) {
+    if (package == nullptr)
+        return QString();
+
+    const QString kind = package->packageLayoutKind;
+    if (kind == QStringLiteral("wholeBookText")) {
         return QStringLiteral("约定：根目录及其子目录下的每个 .txt 视为一本小说；"
                               "同目录 meta.json 可补标题/作者/创作日期/封面；"
                               "导入时按类型包声明的章节规则切分，识别不到章节则整本单章。");
+    }
+    if (kind == QStringLiteral("singleMedia")) {
+        return QStringLiteral("约定：根目录及其子目录下的每个媒体文件视为一个数据包；"
+                              "同目录 meta.json 可补标题/创作者/创作日期/封面。");
+    }
+    if (kind == QStringLiteral("mediaSequence")) {
+        return QStringLiteral("约定：根目录每个子文件夹 = 一个数据包（包内媒体按文件名排序）；"
+                              "根目录散文件各自成包；文件夹内可放 meta.json 补标题/创作者/日期/封面。");
     }
     return QStringLiteral("约定：每个子文件夹 = 一个图集包（图片按文件名排序，"
                           "可放 meta.json 补标题/画家/日期/封面）；根目录散图各自成包。");

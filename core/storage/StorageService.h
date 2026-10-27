@@ -31,6 +31,9 @@ struct ImportPlan
     int score = 0;           // 初始评分 0–100；0 = 未评分
     QList<ImportEntry> entries; // 有序包内条目，顺序即落位顺序
     QString coverSourcePath; // 封面来源文件；空 → 不生成封面（如纯文本包）
+    // 无封面源且包内无图片时（纯视频包），是否生成占位封面（深灰底播放图标）。
+    // 由计划产出方按类型 media 判定；失败仅告警，不阻断导入。
+    bool placeholderCover = false;
 };
 
 // 存储服务（开发文档 3.4 / 5.1–5.4）：桶号计算、路径解析、导入执行器、封面生成。
@@ -85,6 +88,10 @@ public:
 
 private:
     bool generateCover(const QString &sourcePath, const QString &targetPath, AppError *error);
+    // 函数: 生成占位封面（无可用图片的视频包）
+    // 输入: targetPath —— 封面目标路径（.jpg）；输出: 写盘成功为 true
+    // 说明: 600×600 深灰底 + 白色播放三角，纯绘制（不依赖字体与外部资源）
+    bool generatePlaceholderCover(const QString &targetPath, AppError *error);
 
     AppPaths *m_paths;
     LibraryService *m_library;
