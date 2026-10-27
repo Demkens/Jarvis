@@ -1,13 +1,16 @@
-// 视频播放器公共组件（film / modelfilm 等单视频类型共用）
+// 视频播放器公共组件（film / modelfilm / episode 共用）
 // 职责：封装 Qt Multimedia 的播放内核与最小播放控件（播放/暂停、进度、音量、全屏、键盘快捷键），
 //       对上层只暴露"给视频源 + 起播位置，取当前毫秒位置"的窄接口。
-// 边界：不读写浏览记忆、不碰数据库；续看位置的解析与写回由 SingleVideoViewer 负责。
+// 边界：不读写浏览记忆、不碰数据库；续看位置的解析与写回由上层查看器负责。
 // 契约：
 //   输入  source           —— 视频文件 file:// URL（空串 = 无视频）
-//         startPositionMs  —— 媒体加载完成后要跳转到的毫秒位置（只应用一次）
+//         startPositionMs  —— 媒体加载完成后要跳转到的毫秒位置（每次加载应用一次）
 //         volume           —— 音量 0..1
+//         autoPlay         —— 媒体加载完成后是否自动起播（默认 false：加载后停在首帧等用户点播；
+//                             多集查看器切集时置 true 即实现"自动播下一集"）
 //   输出  playing / positionMs / durationMs / seekable（只读，供上层保存进度）
-//         paused()         —— 进入暂停态时发出（上层据此写回续看位置）
+//         paused()         —— 用户从播放态暂停时发出（上层据此写回续看位置）
+//         finished()       —— 播放至媒体结尾时发出（上层据此切下一集）
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -20,6 +23,7 @@ Item {
     property string source: ""
     property int startPositionMs: 0
     property real volume: 0.8
+    property bool autoPlay: false
 
     // 上一次播放状态：用于区分「用户从播放态暂停」与「加载完成的自动暂停」。
     // 只有前者才发出 paused()，避免打开后立刻关窗把续看位置写回 0。
@@ -30,8 +34,11 @@ Item {
     readonly property int durationMs: player.duration
     readonly property bool seekable: player.seekable
 
-    // 输出: 进入暂停态（含手动暂停、拖动后暂停、加载完成自动暂停）
+    // 输出: 用户暂停（播放 → 暂停；加载完成后的自动暂停不算）
     signal paused()
+
+    // 输出: 播放至媒体结尾（上层据此切下一集；重新加载媒体后才会再次触发）
+    signal finished()
 
     // 函数: 开始播放
     // 输入/输出: 无
@@ -124,12 +131,17 @@ Item {
             volume: root.volume
         }
 
-        // 媒体就绪后：应用续看位置并保持暂停，等用户主动播放
+        // 媒体就绪后：应用起播位置；autoPlay 为假时停在首帧等用户点播
         onMediaStatusChanged: {
             if (mediaStatus === MediaPlayer.LoadedMedia) {
                 if (root.startPositionMs > 0)
                     player.position = root.startPositionMs
-                player.pause()
+                if (root.autoPlay)
+                    player.play()
+                else
+                    player.pause()
+            } else if (mediaStatus === MediaPlayer.EndOfMedia) {
+                root.finished()
             }
         }
 

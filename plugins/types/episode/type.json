@@ -1,0 +1,10 @@
+{
+    "form": "episode",
+    "displayName": "剧集",
+    "version": 1,
+    "coreMinVersion": "0.1.0",
+    "packageLayout": { "kind": "mediaSequence", "naming": "%03d" },
+    "media": ["video"],
+    "browseOrder": "sequence",
+    "export": { "kind": "folder", "keepNames": true }
+}

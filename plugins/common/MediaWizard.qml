@@ -1,16 +1,19 @@
-// 单视频类型（film / modelfilm）· 导入向导页（通道A 内容区，开发文档 7.4）
-// 职责：单媒体包（每包恰好 1 个文件）的导入交互，两种状态切换——
-//   ① 初始态：全区域虚线拖拽区（拖入或单击选择，只接受一个文件）；
-//   ② 已选态：左右分栏——左侧只读硬性元数据（媒体信息 / 预分配 ID / 大小 / 上传日期），
+// 视频类类型包 · 导入向导页（film / modelfilm / episode 共用，通道A 内容区，开发文档 7.4）
+// 职责：视频媒体包的导入交互，两种状态切换——
+//   ① 初始态：全区域虚线拖拽区（拖入或单击选择文件）；
+//   ② 已选态：左右分栏——左侧只读硬性元数据（封面占位 / 预分配 ID / 文件数量 / 大小 / 上传日期），
 //              右侧可编辑表单（标题 / 评分 / 创作者 / 创作日期）。
+// 单包文件数由 maxFiles 控制：1 = 单视频包（film/modelfilm，多选即拒绝）；
+//                              0 = 不限（episode 剧集，多选的文件按文件名自然序编号为 001、002…）。
 // 边界：不碰数据库与实际库文件系统，只产出一份 ImportPlan 映射交给核心执行；
 //       封面由核心按"无图片视频包"生成占位封面（本页不指定封面来源）。
 // 与核心（ImportDialog）的契约：
 //   输入  form          —— 外层注入的目标类型 form；
+//         maxFiles      —— 单包允许的最大文件数（0 = 不限，缺省 0）；
 //         importService —— 全局上下文属性（导入预览与执行）；
 //         typeEngine    —— 全局上下文属性（按类型声明的媒体后缀过滤文件）。
 //   输出  ready         —— 底栏「导入」按钮可用性（已选到文件为真）；
-//         importFailed  —— 导入失败/多选被拒时发出，外层弹出警告弹窗；
+//         importFailed  —— 导入失败/超量被拒时发出，外层弹出警告弹窗；
 //         importBlocked —— 命中库内完全重复时发出（视频不参与图片查重，基本不会触发）；
 //         submit()      —— 底栏「导入」点击时由外层调用。
 //   成功后本页自行复位回初始态：不关闭弹窗、不跳结果页。
@@ -27,7 +30,10 @@ Item {
     // 外层注入：本页对应的类型 form
     property string form: ""
 
-    // 已选文件（真实本地绝对路径；单媒体包最多 1 项）
+    // 单包文件数上限：1 = 单媒体包；0 = 不限（多文件按文件名自然序编号入包）
+    property int maxFiles: 0
+
+    // 已选文件（真实本地绝对路径；顺序即包内序号，已按文件名自然序排列）
     property var files: []
 
     // 只读元数据（由核心 previewImport 计算，本页无文件读盘能力）
@@ -72,6 +78,27 @@ Item {
     // 输入: path；输出: 主名
     function baseName(path) {
         return fileName(path).replace(/\.[^.]+$/, "")
+    }
+
+    // 函数: 按文件名的"自然序"比较（数字段按数值大小，其余按字符）
+    // 输入: a, b —— 本地路径；输出: 负数/0/正数（供 Array.sort 使用）
+    // 用途：多集导入时 "第10集" 应排在 "第2集" 之后，避免字典序把 10 排到 2 前面
+    function naturalCompare(a, b) {
+        var sa = fileName(a).toLowerCase()
+        var sb = fileName(b).toLowerCase()
+        var partsA = sa.match(/(\d+)|(\D+)/g) || []
+        var partsB = sb.match(/(\d+)|(\D+)/g) || []
+        for (var i = 0; i < Math.min(partsA.length, partsB.length); ++i) {
+            var na = parseInt(partsA[i], 10)
+            var nb = parseInt(partsB[i], 10)
+            if (!isNaN(na) && !isNaN(nb)) {
+                if (na !== nb)
+                    return na - nb
+            } else if (partsA[i] !== partsB[i]) {
+                return partsA[i] < partsB[i] ? -1 : 1
+            }
+        }
+        return partsA.length - partsB.length
     }
 
     // 函数: 字节数 → 可读文本
@@ -149,7 +176,7 @@ Item {
         }
     }
 
-    // 函数: 落定已选文件并进入「已选态」；单媒体包多选即拒绝
+    // 函数: 落定已选文件并进入「已选态」；超过 maxFiles（maxFiles > 0 时）即拒绝
     // 输入: paths —— 本地媒体绝对路径列表；输出: 无（被拒时保持原状态并发 importFailed）
     function setFiles(paths) {
         var valid = []
@@ -159,12 +186,16 @@ Item {
         }
         if (valid.length === 0)
             return
-        if (valid.length > 1) {
-            page.importFailed("该类型每包仅允许 1 个文件，请单个导入")
+        if (page.maxFiles > 0 && valid.length > page.maxFiles) {
+            page.importFailed("该类型每包仅允许 " + page.maxFiles + " 个文件，请单个导入")
             return
         }
+        // 多文件按文件名自然序排列：集数文件名（如 第2集 / 第10集）按数值而非字典序排
+        if (valid.length > 1)
+            valid.sort(function (a, b) { return page.naturalCompare(a, b) })
         files = valid
-        titleField.text = baseName(valid[0])    // 默认标题取文件名主名
+        // 单文件包默认用文件名主名；多文件包（剧集）不预设，避免把"第01集"当剧名
+        titleField.text = valid.length === 1 ? baseName(valid[0]) : ""
         creatorField.text = ""                  // 留空 → 核心落「佚名」
         dateField.text = today()                // 必填，默认当天（格式固定 YYYY-MM-DD）
         scoreSpin.value = 0                     // 0 = 未评分
@@ -246,7 +277,9 @@ Item {
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
-                text: "本类型每包仅 1 个文件"
+                text: page.maxFiles === 1
+                      ? "本类型每包仅 1 个文件"
+                      : "可多选，包内按文件名顺序编号为 001、002…"
                 font.pixelSize: 12
             }
         }
@@ -329,9 +362,12 @@ Item {
                         font.pixelSize: 12
                     }
 
-                    Label { text: "文件"; font.pixelSize: 12 }
+                    Label { text: "文件数量"; font.pixelSize: 12 }
                     Text {
-                        text: page.files.length > 0 ? page.fileName(page.files[0]) : "—"
+                        // 单媒体包报文件名；多文件包报数量（集列表长度）
+                        text: page.maxFiles === 1
+                              ? (page.files.length > 0 ? page.fileName(page.files[0]) : "—")
+                              : page.files.length + " 个"
                         font.pixelSize: 12
                         elide: Text.ElideMiddle
                         Layout.maximumWidth: 190
@@ -412,15 +448,15 @@ Item {
 
     // ---------- 附属弹层 ----------
 
-    // 视频文件选择（初始态单击拖拽区触发；单选）
+    // 视频文件选择（初始态单击拖拽区触发；maxFiles === 1 时单选，否则多选）
     // nameFilters 用绑定形式：form 由外层 Loader.onLoaded 注入，晚于本组件创建，
     // 一次性赋值会在 form 为空时退化为"所有文件"
     FileDialog {
         id: videoPicker
-        title: "选择视频文件"
-        fileMode: FileDialog.OpenFile
+        title: page.maxFiles === 1 ? "选择视频文件" : "选择视频文件（可多选，按文件名排序）"
+        fileMode: page.maxFiles === 1 ? FileDialog.OpenFile : FileDialog.OpenFiles
         nameFilters: page.nameFilters()
-        onAccepted: page.setFiles(page.urlsToLocalPaths(selectedFile ? [selectedFile] : []))
+        onAccepted: page.setFiles(page.urlsToLocalPaths(selectedFiles))
     }
 
     // 创作日期日历（自建，Qt Quick Controls 无内置 DatePicker）
