@@ -1,0 +1,9 @@
+{
+    "form": "comic",
+    "displayName": "漫画",
+    "version": 1,
+    "coreMinVersion": "0.1.0",
+    "packageLayout": { "kind": "imageSequence", "naming": "%03d" },
+    "browseOrder": "sequence",
+    "export": { "kind": "folder", "keepNames": true }
+}
