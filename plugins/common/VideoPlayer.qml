@@ -30,7 +30,11 @@ Item {
     property int lastState: MediaPlayer.StoppedState
 
     readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
-    readonly property int positionMs: player.position
+    // 媒体是否已可读（加载完成及之后的状态）；未就绪时 position 无意义
+    readonly property bool ready: player.mediaStatus >= MediaPlayer.LoadedMedia
+    // 当前毫秒位置：媒体未就绪时返回请求的起播位置，使上层在加载中关窗也不会把
+    // 续看位置误写为 0（Qt 未加载完成时 player.position 恒为 0）
+    readonly property int positionMs: root.ready ? player.position : root.startPositionMs
     readonly property int durationMs: player.duration
     readonly property bool seekable: player.seekable
 

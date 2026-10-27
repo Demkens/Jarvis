@@ -1,11 +1,15 @@
-// 图片序列类型包 · 导入向导页（draw / comic 共用实现，通道A 内容区，开发文档 7.4）
-// 职责：为图片序列类型提供单包导入的交互内容，两种状态切换——
-//   ① 初始态：全区域虚线拖拽区（拖入或单击选择图片，可多选）；
+// 图片/混合媒体类型包 · 导入向导页（draw / comic / photo 共用实现，通道A 内容区，开发文档 7.4）
+// 职责：为多文件媒体包提供单包导入的交互内容，两种状态切换——
+//   ① 初始态：全区域虚线拖拽区（拖入或单击选择文件，可多选）；
 //   ② 已选态：左右分栏——左侧只读硬性元数据（封面预览 / 预分配 ID / 文件数量 / 大小 / 上传日期），
 //              右侧可编辑表单（标题 / 评分 / 创作者 / 创作日期）。
+// 文件类型由 allowVideo 控制：false = 仅图片（draw/comic，与既有行为一致）；
+//                            true  = 图片 + 视频混选（photo），多选文件按文件名自然序编号入包。
 // 边界：本页不碰数据库与实际库文件系统，只产出一份 ImportPlan 映射交给核心执行。
+//       封面不在此指定，由核心取序号第一张图片（全为视频时生成占位封面）。
 // 与核心（ImportDialog）的契约：
 //   输入  form          —— 外层注入的目标类型 form；
+//         allowVideo    —— 是否允许视频混入（缺省 false）；
 //         importService —— 全局上下文属性（导入预览与执行）。
 //   输出  ready         —— 底栏「导入」按钮可用性（已选到文件为真）；
 //         importFailed  —— 导入失败时发出，外层弹出独立警告弹窗；
@@ -25,8 +29,21 @@ Item {
     // 外层注入：本页对应的类型 form
     property string form: ""
 
+    // 外层注入：是否允许视频混入（photo 为 true；draw/comic 保持 false，仅图片）
+    property bool allowVideo: false
+
     // 已选文件（真实本地绝对路径，顺序即包内序号 001.ext…）
     property var files: []
+
+    // 已选文件中的视频数量（混合包元数据展示用；纯图片包恒为 0）
+    readonly property int videoCount: {
+        var n = 0
+        for (var i = 0; i < files.length; ++i) {
+            if (isVideoFile(files[i]))
+                ++n
+        }
+        return n
+    }
 
     // 只读元数据（由核心 previewImport 计算，本页无文件读盘能力）
     property int previewId: 0
@@ -93,13 +110,65 @@ Item {
         return ["jpg", "jpeg", "png", "gif", "bmp", "webp"].indexOf(m[1]) >= 0
     }
 
-    // 函数: URL 列表 → 本地图片路径列表（丢弃空项与非图片，保持原顺序）
-    // 输入: urls —— URL 字符串数组；输出: 本地绝对路径数组
+    // 函数: 判定路径是否属于受支持的视频格式（后缀清单与核心 MediaTypes::videoSuffixes 一致）
+    // 输入: path；输出: bool
+    function isVideoFile(path) {
+        var m = String(path).toLowerCase().match(/\.([a-z0-9]+)$/)
+        if (!m)
+            return false
+        return ["mp4", "mkv", "avi", "mov", "webm", "m4v",
+                "wmv", "flv", "mpeg", "mpg", "ts"].indexOf(m[1]) >= 0
+    }
+
+    // 函数: 判定路径是否被本向导接受
+    // 输入: path；输出: bool（allowVideo 为真时图片与视频都接受，否则仅图片）
+    function isAcceptedFile(path) {
+        return isImageFile(path) || (page.allowVideo && isVideoFile(path))
+    }
+
+    // 函数: 文件对话框过滤器
+    // 输入/输出: 无；输出: nameFilters 数组
+    // 说明：仅图片时沿用固定清单；允许视频时由 typeEngine.mediaSuffixes(form) 决定，
+    //       与类型包的 media 声明保持同一口径
+    function nameFilters() {
+        if (!page.allowVideo)
+            return ["图片 (*.jpg *.jpeg *.png *.gif *.bmp *.webp)"]
+        var suffixes = typeEngine.mediaSuffixes(form)
+        if (!suffixes || suffixes.length === 0)
+            return ["所有文件 (*)"]
+        var patterns = []
+        for (var i = 0; i < suffixes.length; ++i)
+            patterns.push("*." + suffixes[i])
+        return ["媒体 (" + patterns.join(" ") + ")", "所有文件 (*)"]
+    }
+
+    // 函数: 按文件名的"自然序"比较（数字段按数值大小，其余按字符）
+    // 输入: a, b —— 本地路径；输出: 负数/0/正数（供 Array.sort 使用）
+    // 用途：混合包内"第10集"应排在"第2集"之后，避免字典序把 10 排到 2 前面；
+    //       与 MediaWizard 的同名函数语义一致（两处独立实现，避免跨文件依赖）
+    function naturalCompare(a, b) {
+        var partsA = fileName(a).toLowerCase().match(/(\d+)|(\D+)/g) || []
+        var partsB = fileName(b).toLowerCase().match(/(\d+)|(\D+)/g) || []
+        for (var i = 0; i < Math.min(partsA.length, partsB.length); ++i) {
+            var na = parseInt(partsA[i], 10)
+            var nb = parseInt(partsB[i], 10)
+            if (!isNaN(na) && !isNaN(nb)) {
+                if (na !== nb)
+                    return na - nb
+            } else if (partsA[i] !== partsB[i]) {
+                return partsA[i] < partsB[i] ? -1 : 1
+            }
+        }
+        return partsA.length - partsB.length
+    }
+
+    // 函数: URL 列表 → 本地媒体路径列表（丢弃空项与不受本页接受的文件）
+    // 输入: urls —— URL 字符串数组；输出: 本地绝对路径数组（保持原顺序）
     function urlsToLocalPaths(urls) {
         var out = []
         for (var i = 0; i < urls.length; ++i) {
             var p = fileUrlToLocal(urls[i])
-            if (p !== "" && isImageFile(p))
+            if (p !== "" && isAcceptedFile(p))
                 out.push(p)
         }
         return out
@@ -158,7 +227,7 @@ Item {
     }
 
     // 函数: 落定已选文件并进入「已选态」（表单字段回到默认值）
-    // 输入: paths —— 本地图片绝对路径列表；输出: 无
+    // 输入: paths —— 本地媒体绝对路径列表；输出: 无
     function setFiles(paths) {
         var valid = []
         for (var i = 0; i < paths.length; ++i) {
@@ -167,8 +236,12 @@ Item {
         }
         if (valid.length === 0)
             return
+        // 混合包（photo）：多选文件按文件名自然序编号，保证包内序号可预期；
+        // 纯图片包保持既有行为（顺序 = 用户选择顺序），不做重新排序
+        if (page.allowVideo && valid.length > 1)
+            valid.sort(function (a, b) { return page.naturalCompare(a, b) })
         files = valid
-        titleField.text = baseName(valid[0])    // 默认标题取首图主名
+        titleField.text = baseName(valid[0])    // 默认标题取首项主名
         creatorField.text = ""                  // 留空 → 核心落「佚名」
         dateField.text = today()                // 必填，默认当天（格式固定 YYYY-MM-DD）
         scoreSpin.value = 0                     // 0 = 未评分
@@ -253,7 +326,9 @@ Item {
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
-                text: "支持 jpg / jpeg / png / gif / bmp / webp，可多选"
+                text: page.allowVideo
+                      ? "支持图片与视频，可多选（按文件名排序）"
+                      : "支持 jpg / jpeg / png / gif / bmp / webp，可多选"
                 font.pixelSize: 12
             }
         }
@@ -292,7 +367,8 @@ Item {
                 onClicked: page.reset()
             }
 
-            // 封面预览：首图按比例完整显示（不裁切）
+            // 封面预览：序号第一项是图片时按比例完整显示；首项为视频时显示播放占位
+            //（视频无法解码出封面帧，且核心最终取首个图片条目作封面，此处如实反映）
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -304,7 +380,26 @@ Item {
                     anchors.margins: 8
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
-                    source: page.files.length > 0 ? page.localToUrl(page.files[0]) : ""
+                    visible: page.files.length > 0 && page.isImageFile(page.files[0])
+                    source: visible ? page.localToUrl(page.files[0]) : ""
+                }
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 4
+                    visible: page.files.length > 0 && !page.isImageFile(page.files[0])
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "▶"
+                        font.pixelSize: 40
+                        color: "#8a93a3"
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "首个文件为视频，封面取第一张图片"
+                        font.pixelSize: 11
+                        color: "#8a93a3"
+                    }
                 }
             }
 
@@ -330,7 +425,10 @@ Item {
 
                     Label { text: "文件数量"; font.pixelSize: 12 }
                     Text {
-                        text: page.files.length + " 个"
+                        // 混合包补充视频数量，便于导入前确认是否漏选视频
+                        text: page.videoCount > 0
+                              ? page.files.length + " 个（视频 " + page.videoCount + " 个）"
+                              : page.files.length + " 个"
                         font.pixelSize: 12
                     }
 
@@ -409,12 +507,15 @@ Item {
 
     // ---------- 附属弹层 ----------
 
-    // 图片选择（初始态单击拖拽区触发）
+    // 文件选择（初始态单击拖拽区触发）
+    // nameFilters 用绑定形式：form 由外层 Loader.onLoaded 注入，晚于本组件创建，
+    // 一次性赋值会在 form 为空时退化为"所有文件"（仅图片模式不受影响）
     FileDialog {
         id: imagePicker
-        title: "选择图片（可多选，按文件名排序）"
+        title: page.allowVideo ? "选择图片或视频（可多选，按文件名排序）"
+                               : "选择图片（可多选，按文件名排序）"
         fileMode: FileDialog.OpenFiles
-        nameFilters: ["图片 (*.jpg *.jpeg *.png *.gif *.bmp *.webp)"]
+        nameFilters: page.nameFilters()
         onAccepted: page.setFiles(page.urlsToLocalPaths(selectedFiles))
     }
 

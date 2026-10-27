@@ -1,0 +1,10 @@
+{
+    "form": "photo",
+    "displayName": "摄影",
+    "version": 1,
+    "coreMinVersion": "0.1.0",
+    "packageLayout": { "kind": "mediaSequence", "naming": "%03d" },
+    "media": ["image", "video"],
+    "browseOrder": "sequence",
+    "export": { "kind": "folder", "keepNames": true }
+}
