@@ -1,4 +1,4 @@
-// draw 类型包 · 轻量日期选择弹窗（月历网格）。
+// 图片序列类型包 · 轻量日期选择弹窗（月历网格，draw / comic 共用）。
 // 用途：wizard 的「创作日期」选择控件。Qt Quick Controls 无内置 DatePicker，故自建。
 // 属性 date：当前值，格式 YYYY-MM-DD（空串则定位到今天）；
 // 信号 dateSelected(string value)：用户点选某天后发出（值为 YYYY-MM-DD）。
