@@ -8,7 +8,6 @@ import "include"
 import "pages"
 import "windows"
 
-// 多进程入口
 Item {
     id: root
 
